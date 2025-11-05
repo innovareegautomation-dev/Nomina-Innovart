@@ -83,6 +83,11 @@ export default function CalculoNomina(){
   const setReg = (empId, patch) =>
     setRegistros(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), ...patch } }));
 
+  // Helpers para identificar bonos por nombre en Parámetros
+  const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
+  const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
+  const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
+
   // Cálculo por empleado
   function calcEmpleado(emp){
     const r = registros[emp.id] || {};
@@ -91,6 +96,7 @@ export default function CalculoNomina(){
     const horas        = Math.max(0, Math.floor(Number(r.horasExtras || 0))); // solo horas completas
     const incentivos   = Number(r.otrosIncentivos || 0);
     const otrosDesc    = Number(r.otrosDescuentos || 0);
+    const limpiezaOK   = Boolean(r.limpiezaOK || false); // toggle individual solo para Blanca
 
     const sueldoDiario = (Number(emp.sueldoMensual) || 0) / 30;
     const sueldoBase   = sueldoDiario * diasQ;
@@ -104,17 +110,33 @@ export default function CalculoNomina(){
     // Horas extra
     const pagoHoras    = (sueldoDiario / 8) * horas;
 
-    // Bonos/Descuentos definidos en Parámetros (por puesto/persona)
-    const percepcionesParam = (emp.bonos || [])
-      .filter(b => b.tipo === "percepcion")
-      .reduce((a, b) => a + (Number(b.monto) || 0), 0);
-    const descuentosParam = (emp.bonos || [])
+    // Descuentos fijos (tipo "descuento") definidos en Parámetros
+    const descuentosFijos = (emp.bonos || [])
       .filter(b => b.tipo === "descuento")
       .reduce((a, b) => a + (Number(b.monto) || 0), 0);
 
-    // Bonos solo si Meta cumplida está activo
-    const bonosAplicables  = meta ? percepcionesParam : 0;
-    const descuentosFijos  = descuentosParam;
+    // Montos de percepciones por categoría, desde Parámetros (por nombre)
+    const prodMonto  = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isProd(b))
+                        .reduce((a,b)=> a + (Number(b.monto)||0), 0);
+    const asistMonto = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isAsist(b))
+                        .reduce((a,b)=> a + (Number(b.monto)||0), 0);
+    const limpMonto  = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isLimp(b))
+                        .reduce((a,b)=> a + (Number(b.monto)||0), 0);
+
+    // PRODUCTIVIDAD: se activa con Meta, PERO solo para Innovart
+    const productividadOK = meta && emp.empresa === "Innovart Metal Design";
+    const prodAplicado = productividadOK ? prodMonto : 0;
+
+    // ASISTENCIA: individual, si no hay faltas y no se acumula día por retardos (retardos < 4)
+    const asistenciaOK = (faltas === 0) && (retardos < 4);
+    const asistAplicado = asistenciaOK ? asistMonto : 0;
+
+    // LIMPIEZA: solo Blanca; requiere toggle individual
+    const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
+    const limpAplicado = (esBlanca && limpiezaOK) ? limpMonto : 0;
+
+    // Bonos aplicables totales (según reglas nuevas)
+    const bonosAplicables = prodAplicado + asistAplicado + limpAplicado;
 
     const bruto = sueldoBase
       - descFaltas
@@ -133,7 +155,8 @@ export default function CalculoNomina(){
 
     return {
       sueldoDiario, sueldoBase, descFaltas, descRetardos, pagoHoras,
-      bonosAplicables, incentivos, otrosDesc, descuentosFijos,
+      prodAplicado, asistAplicado, limpAplicado, bonosAplicables,
+      incentivos, otrosDesc, descuentosFijos,
       bruto, vales, interna
     };
   }
@@ -181,7 +204,7 @@ export default function CalculoNomina(){
       <div className="flex items-center gap-2">
         <label className="inline-flex items-center gap-2 text-sm">
           <input type="checkbox" checked={meta} onChange={e => setMeta(e.target.checked)} />
-          Meta cumplida (activa bonos de productividad/asistencia/limpieza)
+          Meta cumplida (activa productividad solo Innovart)
         </label>
       </div>
 
@@ -194,13 +217,14 @@ export default function CalculoNomina(){
             <CardContent className="p-4">
               <h2 className="text-xl font-bold mb-3">{empresa}</h2>
 
-              <div className="grid grid-cols-12 gap-0 text-xs font-semibold border-b bg-gray-50">
+              <div className="grid grid-cols-13 gap-0 text-xs font-semibold border-b bg-gray-50">
                 <div className="p-2 col-span-2">Empleado</div>
                 <div className="p-2">Faltas</div>
                 <div className="p-2">Retardos</div>
                 <div className="p-2">Horas extra</div>
                 <div className="p-2">Otros incentivos</div>
                 <div className="p-2">Otros desc.</div>
+                <div className="p-2">Limp.</div>
                 <div className="p-2 col-span-2">Sueldo base</div>
                 <div className="p-2">Bonos</div>
                 <div className="p-2">Horas extra $</div>
@@ -211,8 +235,10 @@ export default function CalculoNomina(){
               {emps.map((e) => {
                 const r = registros[e.id] || {};
                 const x = calcEmpleado(e);
+                const esBlanca = (e.nombre || "").toLowerCase().includes("blanca");
+
                 return (
-                  <div key={e.id} className="grid grid-cols-12 items-center border-b text-sm">
+                  <div key={e.id} className="grid grid-cols-13 items-center border-b text-sm">
                     <div className="p-2 col-span-2">
                       <div className="font-medium leading-tight">{e.nombre}</div>
                       <div className="text-[11px] text-gray-500">{e.area}</div>
@@ -232,6 +258,23 @@ export default function CalculoNomina(){
                     <div className="p-2">
                       <Input type="number" step="0.01" value={r.otrosDescuentos || ""} onChange={ev => setReg(e.id, { otrosDescuentos: parseFloat(ev.target.value || "0") })} />
                     </div>
+
+                    {/* Limpieza: solo visible/usable para Blanca */}
+                    <div className="p-2">
+                      {esBlanca ? (
+                        <label className="inline-flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(r.limpiezaOK || false)}
+                            onChange={(ev)=> setReg(e.id, { limpiezaOK: ev.target.checked })}
+                          />
+                          Limpieza
+                        </label>
+                      ) : (
+                        <span className="text-[11px] text-gray-400">—</span>
+                      )}
+                    </div>
+
                     <div className="p-2 col-span-2">{currency(x.sueldoBase)}</div>
                     <div className="p-2">{currency(x.bonosAplicables)}</div>
                     <div className="p-2">{currency(x.pagoHoras)}</div>
