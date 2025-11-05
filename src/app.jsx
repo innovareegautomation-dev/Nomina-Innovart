@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import ParametrosNominaTab from './pages/ParametrosNominaTab'
-import CalculoNominaTab from './pages/CalculoNominaTab'
+import CalculoNomina from './pages/CalculoNomina'
 import { Card, CardContent } from './components/ui/card'
 import { Button } from './components/ui/button'
 
@@ -29,12 +29,9 @@ export default function App(){
 
       <Card>
         <CardContent>
-          {tab === 'parametros'
-            ? <ParametrosNominaTab />
-            : <CalculoNominaTab />}
+          {tab === 'parametros' ? <ParametrosNominaTab /> : <CalculoNomina />}
         </CardContent>
       </Card>
     </div>
   )
 }
-
