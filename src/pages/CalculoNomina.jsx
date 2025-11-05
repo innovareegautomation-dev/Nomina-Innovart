@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
 
-// --- Utilidades de fecha (15/16 días, semana ISO, clave periodo) ---
+/* ================== Utilidades de fecha ================== */
 function startOfFortnight(d){
   const dt = new Date(d);
   const y = dt.getFullYear(); const m = dt.getMonth(); const day = dt.getDate();
@@ -40,16 +40,17 @@ const currency = (n) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 })
     .format(Number.isFinite(n) ? n : 0);
 
-// --- Helpers bonos por nombre ---
+/* ================== Helpers para bonos ================== */
 const isProd  = (b) => (b.nombre || "").toLowerCase().includes("productiv");
 const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
 const isLimp  = (b) => (b.nombre || "").toLowerCase().includes("limp");
 
+/* ================== Componente principal ================== */
 export default function CalculoNomina(){
   const [fecha, setFecha] = useState(new Date());
   const [meta, setMeta] = useState(false);           // activa productividad (solo Innovart)
   const [activa, setActiva] = useState([]);          // versión ACTIVA de Parámetros
-  const [activaTS, setActivaTS] = useState(null);    // sello de tiempo de la ACTIVA
+  const [activaTS, setActivaTS] = useState(null);    // sello de tiempo
   const [registros, setRegistros] = useState({});    // capturas por empleado (histórico)
 
   // Cargar parámetros ACTIVO
@@ -60,7 +61,10 @@ export default function CalculoNomina(){
       setActiva(Array.isArray(data) ? data : []);
       const ts = localStorage.getItem(LS_KEY_ACTIVE_TS);
       setActivaTS(ts && !Number.isNaN(Date.parse(ts)) ? ts : null);
-    } catch { setActiva([]); setActivaTS(null); }
+    } catch {
+      setActiva([]);
+      setActivaTS(null);
+    }
   }, []);
 
   // Cargar/guardar capturas por periodo (no toca los parámetros ACTIVO)
@@ -105,7 +109,7 @@ export default function CalculoNomina(){
     const horas        = Math.max(0, Math.floor(Number(r.horasExtras || 0))); // solo horas completas
     const incentivos   = Number(r.otrosIncentivos || 0);
     const otrosDesc    = Number(r.otrosDescuentos || 0);
-    const limpiezaOK   = Boolean(r.limpiezaOK || false); // toggle individual solo para Blanca
+    const limpiezaOK   = Boolean(r.limpiezaOK || false); // toggle individual (solo Blanca)
 
     const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
 
@@ -158,10 +162,10 @@ export default function CalculoNomina(){
   function TotalesEmpresa(emps){
     return emps.reduce((acc, e)=>{
       const x = calcEmpleado(e);
-      acc.base  += x.sueldoBase;
-      acc.horas += x.pagoHoras;
-      acc.bonos += (x.prodAplicado + x.asistAplicado + x.limpAplicado);
-      acc.vales += x.vales;
+      acc.base    += x.sueldoBase;
+      acc.horas   += x.pagoHoras;
+      acc.bonos   += (x.prodAplicado + x.asistAplicado + x.limpAplicado);
+      acc.vales   += x.vales;
       acc.interna += x.interna;
       return acc;
     }, { base:0, horas:0, bonos:0, vales:0, interna:0 });
@@ -205,13 +209,14 @@ export default function CalculoNomina(){
       {empresas.map((empresa) => {
         const emps = grupos[empresa] || [];
         const tot = TotalesEmpresa(emps);
+
         return (
           <Card key={empresa} className="shadow-sm">
             <CardContent className="p-4">
               <h2 className="text-xl font-bold mb-3">{empresa}</h2>
 
-              {/* Encabezados de tabla claros */}
-              <div className="grid grid-cols-12 gap-0 text-xs font-semibold border-b bg-gray-50">
+              {/* Encabezados de tabla claros (14 columnas para que todo quepa) */}
+              <div className="grid grid-cols-14 gap-0 text-xs font-semibold border-b bg-gray-50">
                 <div className="p-2 col-span-3">Trabajador / Puesto</div>
                 <div className="p-2">Faltas</div>
                 <div className="p-2">Retardos</div>
@@ -221,8 +226,9 @@ export default function CalculoNomina(){
                 <div className="p-2">Limpieza</div>
                 <div className="p-2">Sueldo base</div>
                 <div className="p-2 col-span-2">Bonos (Prod/Asist/Limp)</div>
+                <div className="p-2">Horas extra $</div>
                 <div className="p-2">Vales</div>
-                <div className="p-2">INTERNAL</div>
+                <div className="p-2 col-span-2">INTERNAL</div>
               </div>
 
               {emps.map((e) => {
@@ -232,7 +238,7 @@ export default function CalculoNomina(){
                 const esBlanca = (e.nombre || "").toLowerCase().includes("blanca");
 
                 return (
-                  <div key={e.id} className="grid grid-cols-12 items-center border-b text-sm">
+                  <div key={e.id} className="grid grid-cols-14 items-center border-b text-sm">
                     {/* Nombre / puesto */}
                     <div className="p-2 col-span-3">
                       <div className="font-medium leading-tight">{e.nombre}</div>
@@ -286,11 +292,14 @@ export default function CalculoNomina(){
                         <Badge variant={x.asistAplicado ? "default" : "secondary"}>Asist {currency(asist)}</Badge>
                         <Badge variant={x.limpAplicado ? "default" : "secondary"}>Limp {currency(limp)}</Badge>
                       </div>
-                      <div className="text-[11px] text-gray-500 mt-1">Total bonos: <b>{currency(x.prodAplicado + x.asistAplicado + x.limpAplicado)}</b></div>
+                      <div className="text-[11px] text-gray-500 mt-1">
+                        Total bonos: <b>{currency(x.prodAplicado + x.asistAplicado + x.limpAplicado)}</b>
+                      </div>
                     </div>
 
+                    <div className="p-2">{currency(x.pagoHoras)}</div>
                     <div className="p-2">{currency(x.vales)}</div>
-                    <div className="p-2 font-semibold">{currency(x.interna)}</div>
+                    <div className="p-2 col-span-2 font-semibold">{currency(x.interna)}</div>
                   </div>
                 );
               })}
@@ -353,4 +362,18 @@ export default function CalculoNomina(){
                   <div className="text-lg font-bold">{currency(t.horas)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-6
+                  <div className="text-[11px] text-gray-600">Vales</div>
+                  <div className="text-lg font-bold">{currency(t.vales)}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-white border">
+                  <div className="text-[11px] text-gray-600">INTERNAL (pagar)</div>
+                  <div className="text-lg font-bold">{currency(t.interna)}</div>
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
