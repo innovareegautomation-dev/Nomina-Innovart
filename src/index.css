@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --muted-foreground: #6b7280;
+}
+.text-muted-foreground { color: var(--muted-foreground); }
+.bg-muted\/40 { background-color: rgba(243,244,246,0.4); }
+.bg-muted\/30 { background-color: rgba(243,244,246,0.3); }
