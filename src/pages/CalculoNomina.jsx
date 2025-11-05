@@ -3,11 +3,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
 
-// Utilidades de fecha: 15/16 días, semana ISO, clave de periodo
+// --- Utilidades de fecha (15/16 días, semana ISO, clave periodo) ---
 function startOfFortnight(d){
   const dt = new Date(d);
   const y = dt.getFullYear(); const m = dt.getMonth(); const day = dt.getDate();
@@ -39,12 +40,17 @@ const currency = (n) =>
   new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 })
     .format(Number.isFinite(n) ? n : 0);
 
+// --- Helpers bonos por nombre ---
+const isProd  = (b) => (b.nombre || "").toLowerCase().includes("productiv");
+const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
+const isLimp  = (b) => (b.nombre || "").toLowerCase().includes("limp");
+
 export default function CalculoNomina(){
   const [fecha, setFecha] = useState(new Date());
-  const [meta, setMeta] = useState(false);
-  const [activa, setActiva] = useState([]);       // versión ACTIVA de Parámetros
-  const [activaTS, setActivaTS] = useState(null); // sello de tiempo de la ACTIVA
-  const [registros, setRegistros] = useState({}); // capturas por empleado (histórico)
+  const [meta, setMeta] = useState(false);           // activa productividad (solo Innovart)
+  const [activa, setActiva] = useState([]);          // versión ACTIVA de Parámetros
+  const [activaTS, setActivaTS] = useState(null);    // sello de tiempo de la ACTIVA
+  const [registros, setRegistros] = useState({});    // capturas por empleado (histórico)
 
   // Cargar parámetros ACTIVO
   useEffect(() => {
@@ -53,8 +59,8 @@ export default function CalculoNomina(){
       const data = raw ? JSON.parse(raw) : null;
       setActiva(Array.isArray(data) ? data : []);
       const ts = localStorage.getItem(LS_KEY_ACTIVE_TS);
-      setActivaTS(ts || null);
-    } catch { setActiva([]); }
+      setActivaTS(ts && !Number.isNaN(Date.parse(ts)) ? ts : null);
+    } catch { setActiva([]); setActivaTS(null); }
   }, []);
 
   // Cargar/guardar capturas por periodo (no toca los parámetros ACTIVO)
@@ -83,10 +89,13 @@ export default function CalculoNomina(){
   const setReg = (empId, patch) =>
     setRegistros(prev => ({ ...prev, [empId]: { ...(prev[empId] || {}), ...patch } }));
 
-  // Helpers para identificar bonos por nombre en Parámetros
-  const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
-  const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
-  const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
+  function bonosPorTipo(emp){
+    const prod  = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isProd(b)).reduce((a,b)=>a+(+b.monto||0),0);
+    const asist = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isAsist(b)).reduce((a,b)=>a+(+b.monto||0),0);
+    const limp  = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isLimp(b)).reduce((a,b)=>a+(+b.monto||0),0);
+    const descFijos = (emp.bonos || []).filter(b => b.tipo==="descuento").reduce((a,b)=>a+(+b.monto||0),0);
+    return { prod, asist, limp, descFijos };
+  }
 
   // Cálculo por empleado
   function calcEmpleado(emp){
@@ -98,44 +107,32 @@ export default function CalculoNomina(){
     const otrosDesc    = Number(r.otrosDescuentos || 0);
     const limpiezaOK   = Boolean(r.limpiezaOK || false); // toggle individual solo para Blanca
 
+    const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
+
     const sueldoDiario = (Number(emp.sueldoMensual) || 0) / 30;
     const sueldoBase   = sueldoDiario * diasQ;
 
-    // NUEVA REGLA DE FALTAS: 1–3 = 0; >=4 = 1 día (tope 1 día)
+    // FALTAS: 1–3 = 0; >=4 = 1 día (tope 1 día)
     const descFaltas   = (faltas >= 4) ? sueldoDiario * 1 : 0;
 
-    // Retardos: 1 día cada 4
+    // RETARDOS: 1 día cada 4
     const descRetardos = sueldoDiario * Math.floor(retardos / 4);
 
-    // Horas extra
+    // HORAS EXTRA
     const pagoHoras    = (sueldoDiario / 8) * horas;
 
-    // Descuentos fijos (tipo "descuento") definidos en Parámetros
-    const descuentosFijos = (emp.bonos || [])
-      .filter(b => b.tipo === "descuento")
-      .reduce((a, b) => a + (Number(b.monto) || 0), 0);
-
-    // Montos de percepciones por categoría, desde Parámetros (por nombre)
-    const prodMonto  = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isProd(b))
-                        .reduce((a,b)=> a + (Number(b.monto)||0), 0);
-    const asistMonto = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isAsist(b))
-                        .reduce((a,b)=> a + (Number(b.monto)||0), 0);
-    const limpMonto  = (emp.bonos || []).filter(b => b.tipo==="percepcion" && isLimp(b))
-                        .reduce((a,b)=> a + (Number(b.monto)||0), 0);
-
-    // PRODUCTIVIDAD: se activa con Meta, PERO solo para Innovart
+    // PRODUCTIVIDAD: Meta y solo Innovart
     const productividadOK = meta && emp.empresa === "Innovart Metal Design";
-    const prodAplicado = productividadOK ? prodMonto : 0;
+    const prodAplicado = productividadOK ? prod : 0;
 
-    // ASISTENCIA: individual, si no hay faltas y no se acumula día por retardos (retardos < 4)
+    // ASISTENCIA: si no hay faltas y no se acumula un día por retardos
     const asistenciaOK = (faltas === 0) && (retardos < 4);
-    const asistAplicado = asistenciaOK ? asistMonto : 0;
+    const asistAplicado = asistenciaOK ? asist : 0;
 
-    // LIMPIEZA: solo Blanca; requiere toggle individual
+    // LIMPIEZA: solo Blanca; toggle individual
     const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
-    const limpAplicado = (esBlanca && limpiezaOK) ? limpMonto : 0;
+    const limpAplicado = (esBlanca && limpiezaOK) ? limp : 0;
 
-    // Bonos aplicables totales (según reglas nuevas)
     const bonosAplicables = prodAplicado + asistAplicado + limpAplicado;
 
     const bruto = sueldoBase
@@ -145,34 +142,29 @@ export default function CalculoNomina(){
       + bonosAplicables
       + incentivos
       - otrosDesc
-      - descuentosFijos;
+      - descFijos;
 
-    // Vales: solo 1ª quincena
     const vales = esPrimeraQ ? (Number(emp.limiteVales) || 0) : 0;
-
-    // INTERNAL (lo que se entrega después de vales)
     const interna = bruto - vales;
 
     return {
-      sueldoDiario, sueldoBase, descFaltas, descRetardos, pagoHoras,
-      prodAplicado, asistAplicado, limpAplicado, bonosAplicables,
-      incentivos, otrosDesc, descuentosFijos,
-      bruto, vales, interna
+      sueldoBase, pagoHoras, vales, interna,
+      prodAplicado, asistAplicado, limpAplicado,
+      descFaltas, descRetardos, descFijos,
+      otrosDesc, incentivos
     };
   }
 
-  // Totales por empresa
   function TotalesEmpresa(emps){
-    return emps.reduce((acc, e) => {
+    return emps.reduce((acc, e)=>{
       const x = calcEmpleado(e);
-      acc.sueldoBase += x.sueldoBase;
-      acc.bonos      += x.bonosAplicables;
-      acc.horas      += x.pagoHoras;
-      acc.descuentos += (x.descFaltas + x.descRetardos + x.otrosDesc + x.descuentosFijos);
-      acc.vales      += x.vales;
-      acc.interna    += x.interna;
+      acc.base  += x.sueldoBase;
+      acc.horas += x.pagoHoras;
+      acc.bonos += (x.prodAplicado + x.asistAplicado + x.limpAplicado);
+      acc.vales += x.vales;
+      acc.interna += x.interna;
       return acc;
-    }, { sueldoBase:0, bonos:0, horas:0, descuentos:0, vales:0, interna:0 });
+    }, { base:0, horas:0, bonos:0, vales:0, interna:0 });
   }
 
   const empresas = Object.keys(grupos);
@@ -184,9 +176,10 @@ export default function CalculoNomina(){
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Cálculo de Nómina</h1>
           <div className="text-sm text-gray-600">
-            Parámetros ACTIVO: {activaTS ? new Date(activaTS).toLocaleString() : "No definido (ve a Parámetros y pulsa Actualizar)"}.
+            Parámetros ACTIVO: {activaTS ? new Date(activaTS).toLocaleString() : "sin actualizar"}.
           </div>
         </div>
+
         <div className="flex items-center gap-3">
           <Label>Fecha</Label>
           <Input
@@ -204,82 +197,100 @@ export default function CalculoNomina(){
       <div className="flex items-center gap-2">
         <label className="inline-flex items-center gap-2 text-sm">
           <input type="checkbox" checked={meta} onChange={e => setMeta(e.target.checked)} />
-          Meta cumplida (activa productividad solo Innovart)
+          Meta cumplida <span className="text-gray-500">(activa productividad solo Innovart)</span>
         </label>
       </div>
 
       {/* Por empresa */}
       {empresas.map((empresa) => {
         const emps = grupos[empresa] || [];
-        const tot  = TotalesEmpresa(emps);
+        const tot = TotalesEmpresa(emps);
         return (
           <Card key={empresa} className="shadow-sm">
             <CardContent className="p-4">
               <h2 className="text-xl font-bold mb-3">{empresa}</h2>
 
-              <div className="grid grid-cols-13 gap-0 text-xs font-semibold border-b bg-gray-50">
-                <div className="p-2 col-span-2">Empleado</div>
+              {/* Encabezados de tabla claros */}
+              <div className="grid grid-cols-12 gap-0 text-xs font-semibold border-b bg-gray-50">
+                <div className="p-2 col-span-3">Trabajador / Puesto</div>
                 <div className="p-2">Faltas</div>
                 <div className="p-2">Retardos</div>
                 <div className="p-2">Horas extra</div>
                 <div className="p-2">Otros incentivos</div>
                 <div className="p-2">Otros desc.</div>
-                <div className="p-2">Limp.</div>
-                <div className="p-2 col-span-2">Sueldo base</div>
-                <div className="p-2">Bonos</div>
-                <div className="p-2">Horas extra $</div>
+                <div className="p-2">Limpieza</div>
+                <div className="p-2">Sueldo base</div>
+                <div className="p-2 col-span-2">Bonos (Prod/Asist/Limp)</div>
                 <div className="p-2">Vales</div>
-                <div className="p-2 col-span-2">INTERNAL (pagar)</div>
+                <div className="p-2">INTERNAL</div>
               </div>
 
               {emps.map((e) => {
                 const r = registros[e.id] || {};
                 const x = calcEmpleado(e);
+                const { prod, asist, limp } = bonosPorTipo(e);
                 const esBlanca = (e.nombre || "").toLowerCase().includes("blanca");
 
                 return (
-                  <div key={e.id} className="grid grid-cols-13 items-center border-b text-sm">
-                    <div className="p-2 col-span-2">
+                  <div key={e.id} className="grid grid-cols-12 items-center border-b text-sm">
+                    {/* Nombre / puesto */}
+                    <div className="p-2 col-span-3">
                       <div className="font-medium leading-tight">{e.nombre}</div>
                       <div className="text-[11px] text-gray-500">{e.area}</div>
                     </div>
+
+                    {/* Capturas con labels/placeholder */}
                     <div className="p-2">
-                      <Input type="number" value={r.faltas || ""} onChange={ev => setReg(e.id, { faltas: parseInt(ev.target.value || "0") })} />
+                      <Input aria-label="Faltas" placeholder="0" type="number"
+                        value={r.faltas || ""} onChange={ev => setReg(e.id, { faltas: parseInt(ev.target.value || "0") })}/>
+                      <div className="text-[11px] text-gray-400 mt-1">1–3 sin castigo; 4+ = 1 día</div>
                     </div>
                     <div className="p-2">
-                      <Input type="number" value={r.retardos || ""} onChange={ev => setReg(e.id, { retardos: parseInt(ev.target.value || "0") })} />
+                      <Input aria-label="Retardos" placeholder="0" type="number"
+                        value={r.retardos || ""} onChange={ev => setReg(e.id, { retardos: parseInt(ev.target.value || "0") })}/>
+                      <div className="text-[11px] text-gray-400 mt-1">1 día cada 4</div>
                     </div>
                     <div className="p-2">
-                      <Input type="number" value={r.horasExtras || ""} onChange={ev => setReg(e.id, { horasExtras: parseInt(ev.target.value || "0") })} />
+                      <Input aria-label="Horas extra" placeholder="0" type="number"
+                        value={r.horasExtras || ""} onChange={ev => setReg(e.id, { horasExtras: parseInt(ev.target.value || "0") })}/>
+                      <div className="text-[11px] text-gray-400 mt-1">Solo horas completas</div>
                     </div>
                     <div className="p-2">
-                      <Input type="number" step="0.01" value={r.otrosIncentivos || ""} onChange={ev => setReg(e.id, { otrosIncentivos: parseFloat(ev.target.value || "0") })} />
+                      <Input aria-label="Otros incentivos" placeholder="0.00" type="number" step="0.01"
+                        value={r.otrosIncentivos || ""} onChange={ev => setReg(e.id, { otrosIncentivos: parseFloat(ev.target.value || "0") })}/>
                     </div>
                     <div className="p-2">
-                      <Input type="number" step="0.01" value={r.otrosDescuentos || ""} onChange={ev => setReg(e.id, { otrosDescuentos: parseFloat(ev.target.value || "0") })} />
+                      <Input aria-label="Otros descuentos" placeholder="0.00" type="number" step="0.01"
+                        value={r.otrosDescuentos || ""} onChange={ev => setReg(e.id, { otrosDescuentos: parseFloat(ev.target.value || "0") })}/>
                     </div>
 
-                    {/* Limpieza: solo visible/usable para Blanca */}
+                    {/* Limpieza (solo Blanca) */}
                     <div className="p-2">
                       {esBlanca ? (
-                        <label className="inline-flex items-center gap-1 text-xs">
-                          <input
-                            type="checkbox"
+                        <label className="inline-flex items-center gap-2 text-xs">
+                          <input type="checkbox"
                             checked={Boolean(r.limpiezaOK || false)}
-                            onChange={(ev)=> setReg(e.id, { limpiezaOK: ev.target.checked })}
-                          />
-                          Limpieza
+                            onChange={(ev)=> setReg(e.id, { limpiezaOK: ev.target.checked })}/>
+                          Aplicar
                         </label>
-                      ) : (
-                        <span className="text-[11px] text-gray-400">—</span>
-                      )}
+                      ) : <span className="text-[11px] text-gray-400">—</span>}
                     </div>
 
-                    <div className="p-2 col-span-2">{currency(x.sueldoBase)}</div>
-                    <div className="p-2">{currency(x.bonosAplicables)}</div>
-                    <div className="p-2">{currency(x.pagoHoras)}</div>
+                    {/* Cálculos */}
+                    <div className="p-2">{currency(x.sueldoBase)}</div>
+
+                    {/* Bonos con desglose claro */}
+                    <div className="p-2 col-span-2">
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={x.prodAplicado ? "default" : "secondary"}>Prod {currency(prod)}</Badge>
+                        <Badge variant={x.asistAplicado ? "default" : "secondary"}>Asist {currency(asist)}</Badge>
+                        <Badge variant={x.limpAplicado ? "default" : "secondary"}>Limp {currency(limp)}</Badge>
+                      </div>
+                      <div className="text-[11px] text-gray-500 mt-1">Total bonos: <b>{currency(x.prodAplicado + x.asistAplicado + x.limpAplicado)}</b></div>
+                    </div>
+
                     <div className="p-2">{currency(x.vales)}</div>
-                    <div className="p-2 col-span-2 font-semibold">{currency(x.interna)}</div>
+                    <div className="p-2 font-semibold">{currency(x.interna)}</div>
                   </div>
                 );
               })}
@@ -288,7 +299,7 @@ export default function CalculoNomina(){
               <div className="mt-3 grid grid-cols-5 gap-3 text-sm">
                 <div className="p-3 rounded-xl bg-gray-100">
                   <div className="text-[11px] text-gray-600">Total sueldos base</div>
-                  <div className="text-lg font-bold">{currency(tot.sueldoBase)}</div>
+                  <div className="text-lg font-bold">{currency(tot.base)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-100">
                   <div className="text-[11px] text-gray-600">Total bonos</div>
@@ -299,11 +310,11 @@ export default function CalculoNomina(){
                   <div className="text-lg font-bold">{currency(tot.horas)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-100">
-                  <div className="text-[11px] text-gray-600">Total vales (quincena)</div>
+                  <div className="text-[11px] text-gray-600">Vales (quincena)</div>
                   <div className="text-lg font-bold">{currency(tot.vales)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-gray-100">
-                  <div className="text-[11px] text-gray-600">Total INTERNAL (pagar)</div>
+                  <div className="text-[11px] text-gray-600">INTERNAL (pagar)</div>
                   <div className="text-lg font-bold">{currency(tot.interna)}</div>
                 </div>
               </div>
@@ -321,7 +332,7 @@ export default function CalculoNomina(){
             const t = all.reduce((acc, e) => {
               const x = calcEmpleado(e);
               acc.base    += x.sueldoBase;
-              acc.bonos   += x.bonosAplicables;
+              acc.bonos   += (x.prodAplicado + x.asistAplicado + x.limpAplicado);
               acc.horas   += x.pagoHoras;
               acc.vales   += x.vales;
               acc.interna += x.interna;
@@ -342,18 +353,4 @@ export default function CalculoNomina(){
                   <div className="text-lg font-bold">{currency(t.horas)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Vales</div>
-                  <div className="text-lg font-bold">{currency(t.vales)}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">INTERNAL (pagar)</div>
-                  <div className="text-lg font-bold">{currency(t.interna)}</div>
-                </div>
-              </div>
-            );
-          })()}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+                  <div className="text-[11px] text-gray-6
