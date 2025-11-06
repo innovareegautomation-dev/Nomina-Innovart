@@ -51,7 +51,7 @@ const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
 const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
 const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
 
-/* Productividad fija por persona (Innovart) */
+/* Productividad FIJA por persona (solo Innovart) */
 function prodAmountFixed(emp) {
   if (emp.empresa !== "Innovart Metal Design") return 0;
   const n = (emp.nombre || "").toLowerCase();
@@ -63,13 +63,31 @@ function prodAmountFixed(emp) {
   return 0;
 }
 
+/* Overrides puntuales de asistencia (si algún perfil no es $400) */
+const ASISTENCIA_OVERRIDE = {
+  // "gonzalo cornejo": 186.67, // ejemplo si lo agregan en parámetros
+};
+
+/* SDI IMSS fijo por persona (solo informativo) */
+const SDI_IMSS = {
+  "jorge abraham": 292.54,
+  "blanca estela": 292.54,
+  "diego martín": 292.54,
+  "maria del rosario": 292.54,
+  "maría del rosario": 292.54,
+  "luis fernando eduardo": 839.44,
+  "emilio gonzález": 261.20,
+  "isabel emilio": 261.20,
+  // agrega más si hace falta
+};
+
 /* ================== Componente principal ================== */
 export default function CalculoNomina() {
   const [fecha, setFecha] = useState(new Date());
   const [meta, setMeta] = useState(false); // activa productividad (solo Innovart)
   const [activa, setActiva] = useState([]); // versión ACTIVA (Parámetros)
   const [activaTS, setActivaTS] = useState(null);
-  const [registros, setRegistros] = useState({}); // capturas por periodo
+  const [registros, setRegistros] = useState({}); // capturas por periodo (faltas, retardos, etc.)
 
   // Cargar parámetros ACTIVO
   useEffect(() => {
@@ -100,7 +118,6 @@ export default function CalculoNomina() {
   }, [pKey, registros]);
 
   const diasQ = daysInFortnight(fecha);
-  const esPrimeraQ = fecha.getDate() <= 15;
   const semana = weekNumber(fecha);
 
   // Agrupar por empresa
@@ -132,7 +149,7 @@ export default function CalculoNomina() {
     return { prod, asist, limp, descFijos };
   };
 
-  // Cálculo por empleado
+  // Cálculo por empleado, mapeado al Excel
   function calcEmpleado(emp) {
     const r = registros[emp.id] || {};
     const faltas = +r.faltas || 0;
@@ -141,82 +158,84 @@ export default function CalculoNomina() {
     const incentivos = +r.otrosIncentivos || 0;
     const otrosDesc = +r.otrosDescuentos || 0;
     const limpiezaOK = !!r.limpiezaOK;
+    const sueldoFiscalBruto = +r.sueldoFiscalBruto || 0; // editable por periodo (W)
+    const dispersion = +r.dispersion || 0;               // editable por periodo (X)
 
-    const { /* prod, */ asist, limp, descFijos } = bonosPorTipo(emp);
+    const { /* prod variable no se usa */, asist, limp, descFijos } = bonosPorTipo(emp);
 
-    // Sueldo diario y base por días de quincena
     const sueldoDiario = (+emp.sueldoMensual || 0) / 30;
-    const sueldoBaseDias = sueldoDiario * diasQ;
 
-    // Asistencia: 400 para todos en Innovart (si faltas=0 y retardos<4), se integra en L
+    // Asistencia: Innovart -> $400 (o override) cuando faltas=0 y retardos<4
+    const nombreKey = (emp.nombre || "").toLowerCase();
+    const asistenciaBase =
+      emp.empresa === "Innovart Metal Design"
+        ? (ASISTENCIA_OVERRIDE[nombreKey] ?? 400)
+        : asist; // EG u otros: si tienen “asistencia” en parámetros, se respeta
     const asistenciaOK = faltas === 0 && retardos < 4;
-    const asistBase = emp.empresa === "Innovart Metal Design" ? 400 : asist;
-    const asistAplicado = asistenciaOK ? asistBase : 0;
+    const asistenciaAplicada = asistenciaOK ? asistenciaBase : 0;
 
-    // L (sueldo quincenal) = base por días + asistencia aplicada
-    const sueldoQuincenalL = sueldoBaseDias + asistAplicado;
+    // L = sueldo diario * días + asistencia
+    const sueldoQuincenal = sueldoDiario * diasQ + asistenciaAplicada;
 
     // Faltas: 1–3 sin penalización; 4+ = 1 día (tope 1 día)
     const descFaltas = faltas >= 4 ? sueldoDiario * 1 : 0;
 
-    // Retardos: 1 día cada 4 (regla activa)
+    // Retardos: 1 día cada 4 (se conserva la regla)
     const descRetardos = sueldoDiario * Math.floor(retardos / 4);
 
     // Horas extra (solo enteras)
     const pagoHoras = (sueldoDiario / 8) * horas;
 
-    // Productividad: Meta y solo Innovart, monto FIJO por persona
+    // Productividad fija (solo Innovart) + “Meta cumplida”
     const prodFixed = prodAmountFixed(emp);
     const productividadOK = meta && emp.empresa === "Innovart Metal Design";
     const prodAplicado = productividadOK ? prodFixed : 0;
 
     // Limpieza: solo Blanca; toggle individual
-    const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
+    const esBlanca = nombreKey.includes("blanca");
     const limpAplicado = esBlanca && limpiezaOK ? limp : 0;
 
-    // Bonos aplicables (NO incluye asistencia porque va dentro de L)
-    const bonosAplicables = prodAplicado + limpAplicado;
-
-    // === Estilo Excel ===
-    // Percepciones (U) = L - descFaltas - descRetardos + horas + productividad + limpieza + incentivos - otrosDesc - descFijos
-    const percepciones =
-      sueldoQuincenalL -
-      descFaltas -
-      descRetardos +
+    // Suma de percepciones (U) — igual a tu Excel:
+    // U = Sueldo quincenal + Horas extra + Limpieza + Productividad + Otros incentivos – Otros descuentos – Descuentos fijos
+    const sumaPercepciones =
+      sueldoQuincenal +
       pagoHoras +
-      bonosAplicables +
+      limpAplicado +
+      prodAplicado +
       incentivos -
       otrosDesc -
       descFijos;
 
-    // Fiscal (X): si no viene en parámetros, 0
-    const sueldoFiscalBruto = Number(emp.sueldoFiscal || 0);
+    // INTERNAL (Y) = U – Sueldo Fiscal Bruto
+    const interna = sumaPercepciones - sueldoFiscalBruto;
 
-    // Vales: solo 1ª quincena
-    const vales = esPrimeraQ ? (Number(emp.limiteVales) || 0) : 0;
+    // NETO = Dispersión (X) + INTERNAL (Y)
+    const neto = dispersion + interna;
 
-    // INTERNA (Z) = U - X - Vales
-    const interna = percepciones - sueldoFiscalBruto - vales;
-
-    // NETO (AA) = Y + Z ; usamos Y = X si no se maneja distinto
-    const neto = sueldoFiscalBruto + interna;
+    // SDI (informativo)
+    const sdi =
+      SDI_IMSS[Object.keys(SDI_IMSS).find((k) => nombreKey.includes(k)) || ""] || 0;
 
     return {
-      sueldoBase: sueldoQuincenalL, // incluye asistencia si aplica
+      sdi,
+      sueldoDiario,
+      sueldoQuincenal, // L
       pagoHoras,
-      vales,
+      prodAplicado,
+      asistenciaBase,
+      asistenciaAplicada,
+      limpAplicado,
+      sumaPercepciones,
       interna,
       neto,
-      prodAplicado,
-      asistAplicado, // solo visual
-      limpAplicado,
+      vales: +emp.limiteVales || 0, // solo referencia visual
       descFaltas,
       descRetardos,
       descFijos,
       otrosDesc,
       incentivos,
-      asistBase,
-      prodFixed,
+      sueldoFiscalBruto,
+      dispersion,
     };
   }
 
@@ -224,16 +243,15 @@ export default function CalculoNomina() {
     return emps.reduce(
       (acc, e) => {
         const x = calcEmpleado(e);
-        acc.base += x.sueldoBase;
+        acc.base += x.sueldoQuincenal;
         acc.horas += x.pagoHoras;
-        // Bonos = productividad + limpieza (NO asistencia; ya está en base)
-        acc.bonos += x.prodAplicado + x.limpAplicado;
-        acc.vales += x.vales;
+        acc.bonos += x.prodAplicado + x.limpAplicado; // asistencia ya va en L
+        acc.percepciones += x.sumaPercepciones;
         acc.interna += x.interna;
         acc.neto += x.neto;
         return acc;
       },
-      { base: 0, horas: 0, bonos: 0, vales: 0, interna: 0, neto: 0 }
+      { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
     );
   };
 
@@ -261,9 +279,7 @@ export default function CalculoNomina() {
           />
           <div className="text-sm text-gray-700">
             Semana #{semana} • Días quincena: {diasQ} •{" "}
-            {fecha.getDate() <= 15
-              ? "1ª quincena (aplica vales)"
-              : "2ª quincena"}
+            {fecha.getDate() <= 15 ? "1ª quincena" : "2ª quincena"}
           </div>
         </div>
       </div>
@@ -276,10 +292,9 @@ export default function CalculoNomina() {
             checked={meta}
             onChange={(e) => setMeta(e.target.checked)}
           />
+          Meta cumplida
+          <span className="text-gray-500"> (activa productividad solo Innovart)</span>
         </label>
-        <span className="text-sm">
-          Meta cumplida <span className="text-gray-500">(activa productividad solo Innovart)</span>
-        </span>
       </div>
 
       {/* Por empresa */}
@@ -290,24 +305,26 @@ export default function CalculoNomina() {
             <CardContent className="p-4">
               <h2 className="text-xl font-bold mb-3">{empresa}</h2>
 
-              {/* ======= Tabla (alineada, compacta y con primera columna sticky) ======= */}
+              {/* ======= Tabla ======= */}
               <div className="overflow-x-auto">
                 <table className="table-fixed w-full text-sm border">
-                  {/* Anchos fijos por columna */}
                   <colgroup>
                     <col style={{ width: "22rem" }} /> {/* Nombre */}
                     <col style={{ width: "12rem" }} /> {/* Área */}
                     <col style={{ width: "6rem" }} />  {/* Faltas */}
                     <col style={{ width: "6rem" }} />  {/* Retardos */}
                     <col style={{ width: "6.5rem" }} />{/* Horas extra */}
-                    <col style={{ width: "7.5rem" }} />{/* Productividad */}
-                    <col style={{ width: "7.5rem" }} />{/* Asistencia */}
+                    <col style={{ width: "7.5rem" }} />{/* Prod (badge) */}
+                    <col style={{ width: "7.5rem" }} />{/* Asistencia (badge) */}
                     <col style={{ width: "8rem" }} />  {/* Limpieza */}
                     <col style={{ width: "8rem" }} />  {/* Otros incentivos */}
                     <col style={{ width: "8rem" }} />  {/* Otros descuentos */}
-                    <col style={{ width: "7rem" }} />  {/* Vales */}
-                    <col style={{ width: "8rem" }} />  {/* Interna */}
-                    <col style={{ width: "9rem" }} />  {/* Neto */}
+                    <col style={{ width: "7rem" }} />  {/* Vales (ref) */}
+                    <col style={{ width: "8rem" }} />  {/* SDI (ref) */}
+                    <col style={{ width: "9rem" }} />  {/* Sueldo Fiscal Bruto (edit) */}
+                    <col style={{ width: "8rem" }} />  {/* Dispersión (edit) */}
+                    <col style={{ width: "9rem" }} />  {/* INTERNAL */}
+                    <col style={{ width: "10rem" }} /> {/* NETO */}
                   </colgroup>
 
                   <thead className="bg-gray-50 text-xs uppercase">
@@ -323,7 +340,10 @@ export default function CalculoNomina() {
                       <th>Otros incentivos</th>
                       <th>Otros descuentos</th>
                       <th>Vales</th>
-                      <th>Interna</th>
+                      <th>SDI (IMSS)</th>
+                      <th>Sueldo fiscal bruto</th>
+                      <th>Dispersión</th>
+                      <th>INTERNAL</th>
                       <th>Sueldo neto quincenal</th>
                     </tr>
                   </thead>
@@ -332,32 +352,22 @@ export default function CalculoNomina() {
                     {emps.map((emp, idx) => {
                       const r = registros[emp.id] || {};
                       const x = calcEmpleado(emp);
-                      const { /* asist, limp */ limp } = bonosPorTipo(emp);
-                      const esBlanca = (emp.nombre || "")
-                        .toLowerCase()
-                        .includes("blanca");
+                      const { limp } = bonosPorTipo(emp);
+                      const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
 
                       const num = "text-right font-mono whitespace-nowrap";
                       const numTab = { fontVariantNumeric: "tabular-nums" };
                       const stickyBg = idx % 2 ? "bg-gray-50/60" : "bg-white";
 
-                      // Mostrar en badges: productividad fija y asistencia base (400 en Innovart)
                       const prodMostrar = prodAmountFixed(emp);
-                      const asistMostrar = x.asistBase;
+                      const asistMostrar = x.asistenciaBase;
 
                       return (
-                        <tr
-                          key={emp.id}
-                          className="odd:bg-white even:bg-gray-50/60 border-b"
-                        >
+                        <tr key={emp.id} className="odd:bg-white even:bg-gray-50/60 border-b">
                           {/* Nombre (sticky) */}
                           <td className={`sticky left-0 z-10 ${stickyBg}`}>
-                            <div className="font-medium leading-tight truncate">
-                              {emp.nombre}
-                            </div>
-                            <div className="text-[11px] text-gray-500">
-                              {currency(emp.sueldoMensual)} / mes
-                            </div>
+                            <div className="font-medium leading-tight truncate">{emp.nombre}</div>
+                            <div className="text-[11px] text-gray-500">{currency(emp.sueldoMensual)} / mes</div>
                           </td>
 
                           {/* Área */}
@@ -371,15 +381,9 @@ export default function CalculoNomina() {
                               placeholder="0"
                               className="h-9 text-right"
                               value={r.faltas || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  faltas: parseInt(e.target.value || "0"),
-                                })
-                              }
+                              onChange={(e) => setReg(emp.id, { faltas: parseInt(e.target.value || "0") })}
                             />
-                            <div className="text-[10px] text-gray-400">
-                              1–3 ok; 4+ = 1 día
-                            </div>
+                            <div className="text-[10px] text-gray-400">1–3 ok; 4+ = 1 día</div>
                           </td>
 
                           {/* Retardos */}
@@ -390,15 +394,9 @@ export default function CalculoNomina() {
                               placeholder="0"
                               className="h-9 text-right"
                               value={r.retardos || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  retardos: parseInt(e.target.value || "0"),
-                                })
-                              }
+                              onChange={(e) => setReg(emp.id, { retardos: parseInt(e.target.value || "0") })}
                             />
-                            <div className="text-[10px] text-gray-400">
-                              1 día / 4
-                            </div>
+                            <div className="text-[10px] text-gray-400">1 día / 4</div>
                           </td>
 
                           {/* Horas extra */}
@@ -409,41 +407,21 @@ export default function CalculoNomina() {
                               placeholder="0"
                               className="h-9 text-right"
                               value={r.horasExtras || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  horasExtras: parseInt(
-                                    e.target.value || "0"
-                                  ),
-                                })
-                              }
+                              onChange={(e) => setReg(emp.id, { horasExtras: parseInt(e.target.value || "0") })}
                             />
-                            <div className="text-[10px] text-gray-400">
-                              solo enteras
-                            </div>
+                            <div className="text-[10px] text-gray-400">solo enteras</div>
                           </td>
 
                           {/* Productividad (badge) */}
                           <td className={`${num}`} style={numTab}>
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
-                                x.prodAplicado
-                                  ? "bg-black text-white"
-                                  : "bg-gray-200 text-gray-700"
-                              }`}
-                            >
+                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${x.prodAplicado ? "bg-black text-white" : "bg-gray-200 text-gray-700"}`}>
                               {currency(prodMostrar)}
                             </span>
                           </td>
 
                           {/* Asistencia (badge) */}
                           <td className={`${num}`} style={numTab}>
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
-                                x.asistAplicado
-                                  ? "bg-black text-white"
-                                  : "bg-gray-200 text-gray-700"
-                              }`}
-                            >
+                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${x.asistenciaAplicada ? "bg-black text-white" : "bg-gray-200 text-gray-700"}`}>
                               {currency(asistMostrar)}
                             </span>
                           </td>
@@ -455,20 +433,12 @@ export default function CalculoNomina() {
                                 <input
                                   type="checkbox"
                                   checked={!!r.limpiezaOK}
-                                  onChange={(e) =>
-                                    setReg(emp.id, {
-                                      limpiezaOK: e.target.checked,
-                                    })
-                                  }
+                                  onChange={(e) => setReg(emp.id, { limpiezaOK: e.target.checked })}
                                 />
-                                <span className="font-mono" style={numTab}>
-                                  {currency(limp)}
-                                </span>
+                                <span className="font-mono" style={numTab}>{currency(limp)}</span>
                               </label>
                             ) : (
-                              <span className="text-[11px] text-gray-400">
-                                —
-                              </span>
+                              <span className="text-[11px] text-gray-400">—</span>
                             )}
                           </td>
 
@@ -481,13 +451,7 @@ export default function CalculoNomina() {
                               placeholder="0.00"
                               className="h-9 text-right"
                               value={r.otrosIncentivos || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  otrosIncentivos: parseFloat(
-                                    e.target.value || "0"
-                                  ),
-                                })
-                              }
+                              onChange={(e) => setReg(emp.id, { otrosIncentivos: parseFloat(e.target.value || "0") })}
                             />
                           </td>
 
@@ -500,27 +464,52 @@ export default function CalculoNomina() {
                               placeholder="0.00"
                               className="h-9 text-right"
                               value={r.otrosDescuentos || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  otrosDescuentos: parseFloat(
-                                    e.target.value || "0"
-                                  ),
-                                })
-                              }
+                              onChange={(e) => setReg(emp.id, { otrosDescuentos: parseFloat(e.target.value || "0") })}
                             />
                           </td>
 
-                          {/* Vales */}
+                          {/* Vales (referencia) */}
                           <td className={`${num}`} style={numTab}>
                             {currency(x.vales)}
                           </td>
 
-                          {/* Interna */}
+                          {/* SDI IMSS (ref) */}
+                          <td className={`${num}`} style={numTab}>
+                            {x.sdi ? currency(x.sdi) : "—"}
+                          </td>
+
+                          {/* Sueldo Fiscal Bruto (edit) */}
+                          <td>
+                            <Input
+                              aria-label="Sueldo fiscal bruto"
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              className="h-9 text-right"
+                              value={r.sueldoFiscalBruto || ""}
+                              onChange={(e) => setReg(emp.id, { sueldoFiscalBruto: parseFloat(e.target.value || "0") })}
+                            />
+                          </td>
+
+                          {/* Dispersión (edit) */}
+                          <td>
+                            <Input
+                              aria-label="Dispersión"
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              className="h-9 text-right"
+                              value={r.dispersion || ""}
+                              onChange={(e) => setReg(emp.id, { dispersion: parseFloat(e.target.value || "0") })}
+                            />
+                          </td>
+
+                          {/* INTERNAL */}
                           <td className={`${num} font-medium`} style={numTab}>
                             {currency(x.interna)}
                           </td>
 
-                          {/* Neto */}
+                          {/* NETO */}
                           <td className={`${num} font-semibold`} style={numTab}>
                             {currency(x.neto)}
                           </td>
@@ -535,43 +524,21 @@ export default function CalculoNomina() {
                       <td className="px-2.5 py-2 sticky left-0 z-10 bg-gray-100">
                         Totales de {empresa}
                       </td>
-                      <td className="px-2.5 py-2" colSpan={5}></td>
+                      <td className="px-2.5 py-2" colSpan={3}></td>
+                      <td className="px-2.5 py-2">
+                        Hrs extra: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.horas)}</span>
+                      </td>
                       <td className="px-2.5 py-2" colSpan={2}>
-                        Bonos:{" "}
-                        <span
-                          className="font-mono"
-                          style={{ fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {currency(tot.bonos)}
-                        </span>
+                        Bonos: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.bonos)}</span>
                       </td>
-                      <td className="px-2.5 py-2"></td>
+                      <td className="px-2.5 py-2" colSpan={3}></td>
+                      <td className="px-2.5 py-2" colSpan={1}></td>
+                      <td className="px-2.5 py-2" colSpan={1}></td>
                       <td className="px-2.5 py-2">
-                        Vales:{" "}
-                        <span
-                          className="font-mono"
-                          style={{ fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {currency(tot.vales)}
-                        </span>
+                        INTERNAL: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.interna)}</span>
                       </td>
                       <td className="px-2.5 py-2">
-                        Interna:{" "}
-                        <span
-                          className="font-mono"
-                          style={{ fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {currency(tot.interna)}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2">
-                        Neto:{" "}
-                        <span
-                          className="font-mono"
-                          style={{ fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {currency(tot.neto)}
-                        </span>
+                        NETO: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.neto)}</span>
                       </td>
                     </tr>
                   </tfoot>
@@ -591,25 +558,24 @@ export default function CalculoNomina() {
             const t = todos.reduce(
               (acc, emp) => {
                 const x = calcEmpleado(emp);
-                acc.base += x.sueldoBase;
+                acc.base += x.sueldoQuincenal;
                 acc.horas += x.pagoHoras;
-                // Bonos = productividad + limpieza (NO asistencia)
-                acc.bonos += x.prodAplicado + x.limpAplicado;
-                acc.vales += x.vales;
+                acc.bonos += x.prodAplicado + x.limpAplicado; // asistencia ya está en base
+                acc.percepciones += x.sumaPercepciones;
                 acc.interna += x.interna;
                 acc.neto += x.neto;
                 return acc;
               },
-              { base: 0, horas: 0, bonos: 0, vales: 0, interna: 0, neto: 0 }
+              { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
             );
             return (
-              <div className="grid grid-cols-5 gap-3 text-sm">
+              <div className="grid grid-cols-6 gap-3 text-sm">
                 <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Sueldo base</div>
+                  <div className="text-[11px] text-gray-600">Sueldo quincenal (L)</div>
                   <div className="text-lg font-bold">{currency(t.base)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Bonos</div>
+                  <div className="text-[11px] text-gray-600">Bonos (prod + limp)</div>
                   <div className="text-lg font-bold">{currency(t.bonos)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-white border">
@@ -617,11 +583,15 @@ export default function CalculoNomina() {
                   <div className="text-lg font-bold">{currency(t.horas)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Vales</div>
-                  <div className="text-lg font-bold">{currency(t.vales)}</div>
+                  <div className="text-[11px] text-gray-600">Percepciones (U)</div>
+                  <div className="text-lg font-bold">{currency(t.percepciones)}</div>
                 </div>
                 <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">INTERNAL / Neto</div>
+                  <div className="text-[11px] text-gray-600">INTERNAL (Y)</div>
+                  <div className="text-lg font-bold">{currency(t.interna)}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-white border">
+                  <div className="text-[11px] text-gray-600">Sueldo neto quincenal</div>
                   <div className="text-lg font-bold">{currency(t.neto)}</div>
                 </div>
               </div>
