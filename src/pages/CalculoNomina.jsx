@@ -144,39 +144,43 @@ export default function CalculoNomina() {
 
     const { /* prod, */ asist, limp, descFijos } = bonosPorTipo(emp);
 
-    // Sueldo quincenal explícito desde sueldo mensual y días de quincena
-    // Equivale a sueldoMensual * (diasQ / 30), pero lo dejamos claro.
-    const factor = diasQ / 30;
-    const sueldoQuincenal = (+emp.sueldoMensual || 0) * factor;
-
-    // Faltas: 1–3 sin penalización; 4+ = 1 día (tope 1 día)
+    // Sueldo diario y base por días de quincena
     const sueldoDiario = (+emp.sueldoMensual || 0) / 30;
-    const descFaltas = faltas >= 4 ? sueldoDiario * 1 : 0;
+    const sueldoBaseDias = sueldoDiario * diasQ;
 
-    // Retardos: 1 día cada 4
-    const descRetardos = sueldoDiario * Math.floor(retardos / 4);
-
-    // Horas extra
-    const pagoHoras = (sueldoDiario / 8) * horas;
-
-    // Productividad: Meta y solo Innovart, usando monto FIJO por persona
-    const prodFixed = prodAmountFixed(emp);
-    const productividadOK = meta && emp.empresa === "Innovart Metal Design";
-    const prodAplicado = productividadOK ? prodFixed : 0;
-
-    // Asistencia: 400 para todos en Innovart (si faltas=0 y retardos<4)
+    // Asistencia: 400 para todos en Innovart (si faltas=0 y retardos<4), se integra en L
     const asistenciaOK = faltas === 0 && retardos < 4;
     const asistBase = emp.empresa === "Innovart Metal Design" ? 400 : asist;
     const asistAplicado = asistenciaOK ? asistBase : 0;
+
+    // L (sueldo quincenal) = base por días + asistencia aplicada
+    const sueldoQuincenalL = sueldoBaseDias + asistAplicado;
+
+    // Faltas: 1–3 sin penalización; 4+ = 1 día (tope 1 día)
+    const descFaltas = faltas >= 4 ? sueldoDiario * 1 : 0;
+
+    // Retardos: 1 día cada 4 (regla activa)
+    const descRetardos = sueldoDiario * Math.floor(retardos / 4);
+
+    // Horas extra (solo enteras)
+    const pagoHoras = (sueldoDiario / 8) * horas;
+
+    // Productividad: Meta y solo Innovart, monto FIJO por persona
+    const prodFixed = prodAmountFixed(emp);
+    const productividadOK = meta && emp.empresa === "Innovart Metal Design";
+    const prodAplicado = productividadOK ? prodFixed : 0;
 
     // Limpieza: solo Blanca; toggle individual
     const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
     const limpAplicado = esBlanca && limpiezaOK ? limp : 0;
 
-    const bonosAplicables = prodAplicado + asistAplicado + limpAplicado;
+    // Bonos aplicables (NO incluye asistencia porque va dentro de L)
+    const bonosAplicables = prodAplicado + limpAplicado;
 
-    const bruto =
-      sueldoQuincenal - // sueldo base quincenal
+    // === Estilo Excel ===
+    // Percepciones (U) = L - descFaltas - descRetardos + horas + productividad + limpieza + incentivos - otrosDesc - descFijos
+    const percepciones =
+      sueldoQuincenalL -
       descFaltas -
       descRetardos +
       pagoHoras +
@@ -185,20 +189,26 @@ export default function CalculoNomina() {
       otrosDesc -
       descFijos;
 
-    const vales = esPrimeraQ ? +emp.limiteVales || 0 : 0;
-    const interna = bruto - vales;
+    // Fiscal (X): si no viene en parámetros, 0
+    const sueldoFiscalBruto = Number(emp.sueldoFiscal || 0);
 
-    // Neto quincenal (igual a interna en esta versión)
-    const neto = interna;
+    // Vales: solo 1ª quincena
+    const vales = esPrimeraQ ? (Number(emp.limiteVales) || 0) : 0;
+
+    // INTERNA (Z) = U - X - Vales
+    const interna = percepciones - sueldoFiscalBruto - vales;
+
+    // NETO (AA) = Y + Z ; usamos Y = X si no se maneja distinto
+    const neto = sueldoFiscalBruto + interna;
 
     return {
-      sueldoBase: sueldoQuincenal,
+      sueldoBase: sueldoQuincenalL, // incluye asistencia si aplica
       pagoHoras,
       vales,
       interna,
       neto,
       prodAplicado,
-      asistAplicado,
+      asistAplicado, // solo visual
       limpAplicado,
       descFaltas,
       descRetardos,
@@ -216,7 +226,8 @@ export default function CalculoNomina() {
         const x = calcEmpleado(e);
         acc.base += x.sueldoBase;
         acc.horas += x.pagoHoras;
-        acc.bonos += x.prodAplicado + x.asistAplicado + x.limpAplicado;
+        // Bonos = productividad + limpieza (NO asistencia; ya está en base)
+        acc.bonos += x.prodAplicado + x.limpAplicado;
         acc.vales += x.vales;
         acc.interna += x.interna;
         acc.neto += x.neto;
@@ -582,7 +593,8 @@ export default function CalculoNomina() {
                 const x = calcEmpleado(emp);
                 acc.base += x.sueldoBase;
                 acc.horas += x.pagoHoras;
-                acc.bonos += x.prodAplicado + x.asistAplicado + x.limpAplicado;
+                // Bonos = productividad + limpieza (NO asistencia)
+                acc.bonos += x.prodAplicado + x.limpAplicado;
                 acc.vales += x.vales;
                 acc.interna += x.interna;
                 acc.neto += x.neto;
