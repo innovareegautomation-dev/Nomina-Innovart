@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
@@ -23,8 +22,8 @@ function endOfFortnight(d) {
   return day <= 15 ? new Date(y, m, 15) : new Date(y, m + 1, 0);
 }
 function daysInFortnight(d) {
-  const s = startOfFortnight(d),
-    e = endOfFortnight(d);
+  const s = startOfFortnight(d);
+  const e = endOfFortnight(d);
   return Math.round((e - s) / 86400000) + 1; // 15 o 16
 }
 function weekNumber(d) {
@@ -51,6 +50,18 @@ const currency = (n) =>
 const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
 const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
 const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
+
+/* Productividad fija por persona (Innovart) */
+function prodAmountFixed(emp) {
+  if (emp.empresa !== "Innovart Metal Design") return 0;
+  const n = (emp.nombre || "").toLowerCase();
+  if (n.includes("jorge abraham")) return 1800;
+  if (n.includes("blanca estela")) return 250;
+  if (n.includes("diego")) return 1100; // Diego Martín Rico Alvarado
+  if (n.includes("fernando eduardo") || n.includes("moreno mondrag"))
+    return 5018.8; // Luis Fernando Eduardo Moreno Mondragón
+  return 0;
+}
 
 /* ================== Componente principal ================== */
 export default function CalculoNomina() {
@@ -131,11 +142,15 @@ export default function CalculoNomina() {
     const otrosDesc = +r.otrosDescuentos || 0;
     const limpiezaOK = !!r.limpiezaOK;
 
-    const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
-    const sueldoDiario = (+emp.sueldoMensual || 0) / 30;
-    const sueldoBase = sueldoDiario * diasQ;
+    const { /* prod, */ asist, limp, descFijos } = bonosPorTipo(emp);
+
+    // Sueldo quincenal explícito desde sueldo mensual y días de quincena
+    // Equivale a sueldoMensual * (diasQ / 30), pero lo dejamos claro.
+    const factor = diasQ / 30;
+    const sueldoQuincenal = (+emp.sueldoMensual || 0) * factor;
 
     // Faltas: 1–3 sin penalización; 4+ = 1 día (tope 1 día)
+    const sueldoDiario = (+emp.sueldoMensual || 0) / 30;
     const descFaltas = faltas >= 4 ? sueldoDiario * 1 : 0;
 
     // Retardos: 1 día cada 4
@@ -144,13 +159,15 @@ export default function CalculoNomina() {
     // Horas extra
     const pagoHoras = (sueldoDiario / 8) * horas;
 
-    // Productividad: Meta y solo Innovart
+    // Productividad: Meta y solo Innovart, usando monto FIJO por persona
+    const prodFixed = prodAmountFixed(emp);
     const productividadOK = meta && emp.empresa === "Innovart Metal Design";
-    const prodAplicado = productividadOK ? prod : 0;
+    const prodAplicado = productividadOK ? prodFixed : 0;
 
-    // Asistencia: si no hay faltas y no se acumula un día por retardos
+    // Asistencia: 400 para todos en Innovart (si faltas=0 y retardos<4)
     const asistenciaOK = faltas === 0 && retardos < 4;
-    const asistAplicado = asistenciaOK ? asist : 0;
+    const asistBase = emp.empresa === "Innovart Metal Design" ? 400 : asist;
+    const asistAplicado = asistenciaOK ? asistBase : 0;
 
     // Limpieza: solo Blanca; toggle individual
     const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
@@ -159,7 +176,7 @@ export default function CalculoNomina() {
     const bonosAplicables = prodAplicado + asistAplicado + limpAplicado;
 
     const bruto =
-      sueldoBase -
+      sueldoQuincenal - // sueldo base quincenal
       descFaltas -
       descRetardos +
       pagoHoras +
@@ -171,11 +188,11 @@ export default function CalculoNomina() {
     const vales = esPrimeraQ ? +emp.limiteVales || 0 : 0;
     const interna = bruto - vales;
 
-    // Neto quincenal (en esta versión es igual a interna)
+    // Neto quincenal (igual a interna en esta versión)
     const neto = interna;
 
     return {
-      sueldoBase,
+      sueldoBase: sueldoQuincenal,
       pagoHoras,
       vales,
       interna,
@@ -188,6 +205,8 @@ export default function CalculoNomina() {
       descFijos,
       otrosDesc,
       incentivos,
+      asistBase,
+      prodFixed,
     };
   }
 
@@ -246,11 +265,10 @@ export default function CalculoNomina() {
             checked={meta}
             onChange={(e) => setMeta(e.target.checked)}
           />
-          Meta cumplida{" "}
-          <span className="text-gray-500">
-            (activa productividad solo Innovart)
-          </span>
         </label>
+        <span className="text-sm">
+          Meta cumplida <span className="text-gray-500">(activa productividad solo Innovart)</span>
+        </span>
       </div>
 
       {/* Por empresa */}
@@ -261,29 +279,29 @@ export default function CalculoNomina() {
             <CardContent className="p-4">
               <h2 className="text-xl font-bold mb-3">{empresa}</h2>
 
-              {/* ======= Tabla (alineada y compacta) ======= */}
+              {/* ======= Tabla (alineada, compacta y con primera columna sticky) ======= */}
               <div className="overflow-x-auto">
                 <table className="table-fixed w-full text-sm border">
                   {/* Anchos fijos por columna */}
                   <colgroup>
                     <col style={{ width: "22rem" }} /> {/* Nombre */}
                     <col style={{ width: "12rem" }} /> {/* Área */}
-                    <col style={{ width: "6rem" }} /> {/* Faltas */}
-                    <col style={{ width: "6rem" }} /> {/* Retardos */}
-                    <col style={{ width: "6.5rem" }} /> {/* Horas extra */}
-                    <col style={{ width: "7.5rem" }} /> {/* Productividad */}
-                    <col style={{ width: "7.5rem" }} /> {/* Asistencia */}
-                    <col style={{ width: "8rem" }} /> {/* Limpieza */}
-                    <col style={{ width: "8rem" }} /> {/* Otros incentivos */}
-                    <col style={{ width: "8rem" }} /> {/* Otros descuentos */}
-                    <col style={{ width: "7rem" }} /> {/* Vales */}
-                    <col style={{ width: "8rem" }} /> {/* Interna */}
-                    <col style={{ width: "9rem" }} /> {/* Neto */}
+                    <col style={{ width: "6rem" }} />  {/* Faltas */}
+                    <col style={{ width: "6rem" }} />  {/* Retardos */}
+                    <col style={{ width: "6.5rem" }} />{/* Horas extra */}
+                    <col style={{ width: "7.5rem" }} />{/* Productividad */}
+                    <col style={{ width: "7.5rem" }} />{/* Asistencia */}
+                    <col style={{ width: "8rem" }} />  {/* Limpieza */}
+                    <col style={{ width: "8rem" }} />  {/* Otros incentivos */}
+                    <col style={{ width: "8rem" }} />  {/* Otros descuentos */}
+                    <col style={{ width: "7rem" }} />  {/* Vales */}
+                    <col style={{ width: "8rem" }} />  {/* Interna */}
+                    <col style={{ width: "9rem" }} />  {/* Neto */}
                   </colgroup>
 
                   <thead className="bg-gray-50 text-xs uppercase">
                     <tr className="[&>th]:px-2.5 [&>th]:py-2 [&>th]:text-left [&>th]:border-b">
-                      <th>Nombre del empleado</th>
+                      <th className="sticky left-0 z-20 bg-gray-50">Nombre del empleado</th>
                       <th>Área</th>
                       <th>Faltas</th>
                       <th>Retardos</th>
@@ -300,25 +318,29 @@ export default function CalculoNomina() {
                   </thead>
 
                   <tbody className="[&>tr>td]:px-2.5 [&>tr>td]:py-2">
-                    {emps.map((emp) => {
+                    {emps.map((emp, idx) => {
                       const r = registros[emp.id] || {};
                       const x = calcEmpleado(emp);
-                      const { prod, asist, limp } = bonosPorTipo(emp);
+                      const { /* asist, limp */ limp } = bonosPorTipo(emp);
                       const esBlanca = (emp.nombre || "")
                         .toLowerCase()
                         .includes("blanca");
 
-                      // clases para importes alineados
                       const num = "text-right font-mono whitespace-nowrap";
                       const numTab = { fontVariantNumeric: "tabular-nums" };
+                      const stickyBg = idx % 2 ? "bg-gray-50/60" : "bg-white";
+
+                      // Mostrar en badges: productividad fija y asistencia base (400 en Innovart)
+                      const prodMostrar = prodAmountFixed(emp);
+                      const asistMostrar = x.asistBase;
 
                       return (
                         <tr
                           key={emp.id}
                           className="odd:bg-white even:bg-gray-50/60 border-b"
                         >
-                          {/* Nombre */}
-                          <td>
+                          {/* Nombre (sticky) */}
+                          <td className={`sticky left-0 z-10 ${stickyBg}`}>
                             <div className="font-medium leading-tight truncate">
                               {emp.nombre}
                             </div>
@@ -389,7 +411,7 @@ export default function CalculoNomina() {
                             </div>
                           </td>
 
-                          {/* Productividad */}
+                          {/* Productividad (badge) */}
                           <td className={`${num}`} style={numTab}>
                             <span
                               className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
@@ -398,11 +420,11 @@ export default function CalculoNomina() {
                                   : "bg-gray-200 text-gray-700"
                               }`}
                             >
-                              {currency(prod)}
+                              {currency(prodMostrar)}
                             </span>
                           </td>
 
-                          {/* Asistencia */}
+                          {/* Asistencia (badge) */}
                           <td className={`${num}`} style={numTab}>
                             <span
                               className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
@@ -411,7 +433,7 @@ export default function CalculoNomina() {
                                   : "bg-gray-200 text-gray-700"
                               }`}
                             >
-                              {currency(asist)}
+                              {currency(asistMostrar)}
                             </span>
                           </td>
 
@@ -428,10 +450,7 @@ export default function CalculoNomina() {
                                     })
                                   }
                                 />
-                                <span
-                                  className="font-mono"
-                                  style={numTab}
-                                >
+                                <span className="font-mono" style={numTab}>
                                   {currency(limp)}
                                 </span>
                               </label>
@@ -486,18 +505,12 @@ export default function CalculoNomina() {
                           </td>
 
                           {/* Interna */}
-                          <td
-                            className={`${num} font-medium`}
-                            style={numTab}
-                          >
+                          <td className={`${num} font-medium`} style={numTab}>
                             {currency(x.interna)}
                           </td>
 
                           {/* Neto */}
-                          <td
-                            className={`${num} font-semibold`}
-                            style={numTab}
-                          >
+                          <td className={`${num} font-semibold`} style={numTab}>
                             {currency(x.neto)}
                           </td>
                         </tr>
@@ -508,9 +521,10 @@ export default function CalculoNomina() {
                   {/* Totales por empresa */}
                   <tfoot>
                     <tr className="bg-gray-100 font-semibold">
-                      <td className="px-2.5 py-2" colSpan={6}>
+                      <td className="px-2.5 py-2 sticky left-0 z-10 bg-gray-100">
                         Totales de {empresa}
                       </td>
+                      <td className="px-2.5 py-2" colSpan={5}></td>
                       <td className="px-2.5 py-2" colSpan={2}>
                         Bonos:{" "}
                         <span
