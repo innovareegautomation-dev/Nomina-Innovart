@@ -9,7 +9,7 @@ export default function App(){
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Payroll App</h1>
+      <h1 className="text-3xl font-bold mb-6">LaRaya App</h1>
 
       <div className="flex gap-2 mb-6">
         <Button
