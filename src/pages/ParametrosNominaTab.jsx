@@ -1,285 +1,508 @@
-
-import React, { useEffect, useMemo, useState } from "react";
+// src/pages/ParametrosNominaTab.jsx
+import React, { useEffect, useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 
-// Datos semilla
-const SEED = [
-  { id: "inv-jorge", empresa: "Innovart Metal Design", nombre: "Jorge Abraham López Díaz", area: "Jefe de Planta", sueldoMensual: 13800, limiteVales: 1375.78, bonos: [ { id: "b-prod", nombre: "Productividad", monto: 1200, tipo: "percepcion" }, { id: "b-asist", nombre: "Asistencia", monto: 600, tipo: "percepcion" } ] },
-  { id: "inv-blanca", empresa: "Innovart Metal Design", nombre: "Blanca Estela Gutiérrez Cerda", area: "Operador", sueldoMensual: 8364, limiteVales: 1375.78, bonos: [ { id: "b-prod", nombre: "Productividad", monto: 500, tipo: "percepcion" }, { id: "b-asist", nombre: "Asistencia", monto: 500, tipo: "percepcion" }, { id: "b-limp", nombre: "Limpieza y orden", monto: 200, tipo: "percepcion" } ] },
-  { id: "inv-diego", empresa: "Innovart Metal Design", nombre: "Diego Martín Rico Alvarado", area: "Diseñador", sueldoMensual: 9000, limiteVales: 1375.78, bonos: [ { id: "b-prod", nombre: "Productividad", monto: 600, tipo: "percepcion" }, { id: "b-asist", nombre: "Asistencia", monto: 500, tipo: "percepcion" } ] },
-  { id: "inv-rosario", empresa: "Innovart Metal Design", nombre: "María del Rosario Contreras García", area: "Intendencia", sueldoMensual: 8364, limiteVales: 1375.78, bonos: [ { id: "b-asist", nombre: "Asistencia", monto: 500, tipo: "percepcion" } ] },
-  { id: "inv-luis", empresa: "Innovart Metal Design", nombre: "Luis Fernando Eduardo Moreno Mondragón", area: "Operaciones", sueldoMensual: 24000, limiteVales: 1375.78, bonos: [ { id: "b-prod", nombre: "Productividad", monto: 4500, tipo: "percepcion" }, { id: "b-asist", nombre: "Asistencia", monto: 518.8, tipo: "percepcion" } ] },
-  { id: "inv-emilio", empresa: "Innovart Metal Design", nombre: "Emilio González Javier", area: "Dirección", sueldoMensual: 15600, limiteVales: 1375.78, bonos: [] },
-  { id: "inv-isabel", empresa: "Innovart Metal Design", nombre: "Isabel Emilio Cortés", area: "Administración", sueldoMensual: 8500, limiteVales: 1375.78, bonos: [] },
-  { id: "inv-joaquin", empresa: "Innovart Metal Design", nombre: "Joaquín Estrada Monjaraz", area: "Recursos Humanos", sueldoMensual: 10000, limiteVales: 1375.78, bonos: [] },
-  { id: "inv-lupita", empresa: "Innovart Metal Design", nombre: "María Guadalupe Torres Nieto", area: "Aux. Administrativo", sueldoMensual: 8364, limiteVales: 1375.78, bonos: [ { id: "b-asist", nombre: "Asistencia", monto: 418, tipo: "percepcion" } ] },
-  { id: "eg-juan", empresa: "EG Automation SA de CV", nombre: "Juan Manuel Sandoval Villalobos", area: "Integrador eléctrico", sueldoMensual: 8600, limiteVales: 0, bonos: [ { id: "b-prod", nombre: "Productividad", monto: 1040, tipo: "percepcion" }, { id: "b-asist", nombre: "Asistencia", monto: 500, tipo: "percepcion" } ] },
-  { id: "eg-alfredo", empresa: "EG Automation SA de CV", nombre: "Alfredo Escobedo", area: "Asesor", sueldoMensual: 10000, limiteVales: 0, bonos: [] },
-  { id: "eg-juanita", empresa: "EG Automation SA de CV", nombre: "JUANITA", area: "Limpieza", sueldoMensual: 1850, limiteVales: 0, bonos: [] },
-];
-
-const LS_KEY = "payroll-parametros-v1";
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
 
-const currency = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 2 }).format(Number.isFinite(n) ? n : 0);
+/* ====== Helpers de bonos (mismo criterio que en Cálculo de Nómina) ====== */
+const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
+const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
+const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
 
-function load(key){ try{ const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch { return null; } }
-function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+function currency(n) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(+n) ? +n : 0);
+}
 
-export default function ParametrosNominaTab(){
-  const [data, setData] = useState([]);
-  const [empresaTab, setEmpresaTab] = useState("todas");
-  const [q, setQ] = useState("");
-  const [importOpen, setImportOpen] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
-  const [newEmp, setNewEmp] = useState({ empresa: "Innovart Metal Design", limiteVales: 1375.78 });
-  const [lastSavedAt, setLastSavedAt] = useState(null);
+/** Normaliza un registro antiguo de parámetros a la nueva forma de fila editable */
+function normalizarEmpleado(emp) {
+  const bonos = Array.isArray(emp.bonos) ? emp.bonos : [];
 
-  useEffect(()=>{
-    const cached = load(LS_KEY);
-    setData(cached ?? SEED);
-    const ts = load(LS_KEY_ACTIVE_TS);
-    setLastSavedAt(ts ?? null);
+  const suma = (pred) =>
+    bonos.filter(pred).reduce((acc, b) => acc + (+b.monto || 0), 0);
+
+  const bonoAsistencia = suma(isAsist);
+  const bonoLimpieza = suma(isLimp);
+  const bonoProductividad = suma(isProd);
+
+  return {
+    id: emp.id || crypto.randomUUID?.() || `emp-${Date.now()}-${Math.random()}`,
+    empresa: emp.empresa || "",
+    nombre: emp.nombre || "",
+    area: emp.area || "",
+    sueldoMensual: emp.sueldoMensual ?? "",
+    fechaIngreso: emp.fechaIngreso || "",
+    bonoAsistencia: bonoAsistencia || "", // Puntualidad y asistencia
+    bonoLimpieza: bonoLimpieza || "",
+    bonoProductividad: bonoProductividad || "",
+    infonavitCredito: emp.infonavitCredito ?? "",
+    altaIMSS: !!emp.altaIMSS,
+    sdi: emp.sdi ?? "",
+    limiteVales: emp.limiteVales ?? "",
+    dispersion: emp.dispersionBase ?? "",
+    primaVacacional: emp.primaVacacional ?? "",
+    aguinaldo: emp.aguinaldo ?? "",
+  };
+}
+
+/** Convierte la fila editable al formato que espera Cálculo de Nómina */
+function filaAEmpleado(fila) {
+  const bonos = [];
+
+  // Solo agregamos bonos con monto > 0 para no llenar basura
+  if (+fila.bonoAsistencia > 0) {
+    bonos.push({
+      id: "asistencia",
+      tipo: "percepcion",
+      nombre: "Puntualidad y asistencia",
+      monto: +fila.bonoAsistencia,
+    });
+  }
+  if (+fila.bonoLimpieza > 0) {
+    bonos.push({
+      id: "limpieza",
+      tipo: "percepcion",
+      nombre: "Bono de orden y limpieza",
+      monto: +fila.bonoLimpieza,
+    });
+  }
+  if (+fila.bonoProductividad > 0) {
+    bonos.push({
+      id: "productividad",
+      tipo: "percepcion",
+      nombre: "Bono de productividad",
+      monto: +fila.bonoProductividad,
+    });
+  }
+
+  return {
+    id: fila.id,
+    empresa: fila.empresa || "",
+    nombre: fila.nombre || "",
+    area: fila.area || "",
+    sueldoMensual: +fila.sueldoMensual || 0,
+    fechaIngreso: fila.fechaIngreso || "",
+    limiteVales: +fila.limiteVales || 0,
+    bonos,
+    infonavitCredito: +fila.infonavitCredito || 0,
+    altaIMSS: !!fila.altaIMSS,
+    sdi: +fila.sdi || 0,
+    dispersionBase: +fila.dispersion || 0,
+    primaVacacional: +fila.primaVacacional || 0,
+    aguinaldo: +fila.aguinaldo || 0,
+  };
+}
+
+export default function ParametrosNominaTab() {
+  const [filas, setFilas] = useState([]);
+  const [ts, setTs] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  // Cargar parámetros existentes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY_ACTIVE);
+      const data = raw ? JSON.parse(raw) : null;
+      const lista = Array.isArray(data) ? data : [];
+      setFilas(lista.map(normalizarEmpleado));
+
+      const tsRaw = localStorage.getItem(LS_KEY_ACTIVE_TS);
+      setTs(tsRaw && !Number.isNaN(Date.parse(tsRaw)) ? tsRaw : null);
+    } catch {
+      setFilas([]);
+      setTs(null);
+    }
   }, []);
 
-  useEffect(()=>{ if (data.length) save(LS_KEY, data); }, [data]);
+  const empresasDisponibles = useMemo(() => {
+    const set = new Set();
+    filas.forEach((f) => f.empresa && set.add(f.empresa));
+    if (!set.size) {
+      set.add("Innovart Metal Design");
+    }
+    return Array.from(set);
+  }, [filas]);
 
-  const filtered = useMemo(()=> data.filter(e=>{
-    const byEmpresa = empresaTab === "todas" ? true : e.empresa === empresaTab;
-    const byQ = q.trim().length ? (e.nombre.toLowerCase().includes(q.toLowerCase()) || e.area.toLowerCase().includes(q.toLowerCase())) : true;
-    return byEmpresa && byQ;
-  }), [data, empresaTab, q]);
+  const handleChange = (id, field, value) => {
+    setFilas((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, [field]: value } : f))
+    );
+  };
 
-  function updateEmployee(id, patch){ setData(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e)); }
-  function removeEmployee(id){ setData(prev => prev.filter(e => e.id !== id)); }
-  function addEmployee(){
-    if (!newEmp.nombre || !newEmp.area || !newEmp.empresa) return alert("Completa empresa, nombre y área");
-    const id = `${newEmp.empresa === "Innovart Metal Design" ? "inv" : "eg"}-${(Math.random().toString(36).slice(2,8))}`;
-    const limite = typeof newEmp.limiteVales === "number" ? newEmp.limiteVales : (newEmp.empresa === "Innovart Metal Design" ? 1375.78 : 0);
-    const emp = { id, empresa: newEmp.empresa, nombre: newEmp.nombre, area: newEmp.area, sueldoMensual: Number(newEmp.sueldoMensual)||0, limiteVales: limite, bonos: [] };
-    setData(prev => [emp, ...prev]);
-    setNewEmp({ empresa: "Innovart Metal Design", limiteVales: 1375.78 });
-    setAddOpen(false);
-  }
+  const handleToggleAltaIMSS = (id) => {
+    setFilas((prev) =>
+      prev.map((f) =>
+        f.id === id ? { ...f, altaIMSS: !f.altaIMSS } : f
+      )
+    );
+  };
 
-  function addBonus(empId, preset){
-    setData(prev => prev.map(e => {
-      if (e.id !== empId) return e;
-      const b = { id: `b-${(Math.random().toString(36).slice(2,8))}`, nombre: (preset?.nombre || "Nuevo bono"), monto: (preset?.monto ?? 0), tipo: (preset?.tipo || "percepcion") };
-      return { ...e, bonos: [...e.bonos, b] };
-    }));
-  }
-  function updateBonus(empId, bonusId, patch){
-    setData(prev => prev.map(e => e.id !== empId ? e : { ...e, bonos: e.bonos.map(b => b.id === bonusId ? { ...b, ...patch } : b) }));
-  }
-  function removeBonus(empId, bonusId){
-    setData(prev => prev.map(e => e.id !== empId ? e : { ...e, bonos: e.bonos.filter(b => b.id !== bonusId) }));
-  }
+  const agregarFila = () => {
+    const nueva = {
+      id: crypto.randomUUID?.() || `emp-${Date.now()}-${Math.random()}`,
+      empresa: empresasDisponibles[0] || "Innovart Metal Design",
+      nombre: "",
+      area: "",
+      sueldoMensual: "",
+      fechaIngreso: "",
+      bonoAsistencia: "",
+      bonoLimpieza: "",
+      bonoProductividad: "",
+      infonavitCredito: "",
+      altaIMSS: true,
+      sdi: "",
+      limiteVales: "",
+      dispersion: "",
+      primaVacacional: "",
+      aguinaldo: "",
+    };
+    setFilas((prev) => [...prev, nueva]);
+  };
 
-  function totalBonos(emp){
-    const percep = emp.bonos.filter(b => b.tipo === "percepcion").reduce((a,b)=>a+(Number(b.monto)||0),0);
-    const desc = emp.bonos.filter(b => b.tipo === "descuento").reduce((a,b)=>a+(Number(b.monto)||0),0);
-    return { percep, desc, neto: percep - desc };
-  }
+  const eliminarFila = (id) => {
+    if (!window.confirm("¿Eliminar este trabajador de los parámetros?")) return;
+    setFilas((prev) => prev.filter((f) => f.id !== id));
+  };
 
-  function exportJson(){
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = `parametros_nomina_${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);
-  }
-  function importJson(){
+  const guardar = () => {
+    setGuardando(true);
     try {
-      const parsed = JSON.parse(importText);
-      if (!Array.isArray(parsed)) throw new Error("El JSON debe ser un arreglo de empleados");
-      const ok = parsed.every((e) => typeof e.id === "string" && typeof e.nombre === "string" && typeof e.sueldoMensual === "number");
-      if (!ok) throw new Error("Formato de empleados inválido");
-      setData(parsed);
-      setImportOpen(false); setImportText("");
-    } catch (e) { alert(e?.message || "No se pudo importar el JSON"); }
-  }
-  function resetToSeed(){ setData(SEED); }
-  function guardarComoActivo(){
-    save(LS_KEY_ACTIVE, data);
-    const ts = new Date().toISOString();
-    save(LS_KEY_ACTIVE_TS, ts);
-    setLastSavedAt(ts);
-  }
+      const empleados = filas.map(filaAEmpleado);
+      localStorage.setItem(LS_KEY_ACTIVE, JSON.stringify(empleados));
+      const tsNow = new Date().toISOString();
+      localStorage.setItem(LS_KEY_ACTIVE_TS, tsNow);
+      setTs(tsNow);
+      alert("Parámetros de nómina guardados correctamente.");
+    } catch (e) {
+      console.error(e);
+      alert("Ocurrió un error al guardar los parámetros.");
+    } finally {
+      setGuardando(false);
+    }
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end gap-4">
-        <div className="flex-1">
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
           <h1 className="text-2xl font-bold">Parámetros de Nómina</h1>
-          <p className="text-sm text-muted-foreground">Administra sueldos, bonos (percepciones/ descuentos) y límites de vales. Todo es editable. Usa <b>Actualizar</b> para fijar la versión ACTIVA que usará el cálculo de nómina.</p>
-          {lastSavedAt && (<div className="mt-2 text-xs text-muted-foreground">Última actualización activa: <span className="font-medium">{new Date(lastSavedAt).toLocaleString()}</span></div>)}
+          <p className="text-sm text-gray-600">
+            Aquí defines los valores base por trabajador (bonos, SDI, vales, etc.).
+            Estos datos son los que usará la pantalla de{" "}
+            <span className="font-semibold">Cálculo de Nómina</span>.
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Última actualización:{" "}
+            {ts ? new Date(ts).toLocaleString() : "sin guardar aún"}.
+          </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button onClick={guardarComoActivo} className="bg-emerald-600 hover:bg-emerald-700">Actualizar (guardar como ACTIVO)</Button>
-          <Button variant="secondary" onClick={exportJson}>Exportar JSON</Button>
-          <Button variant="secondary" onClick={()=>setImportOpen(true)}>Importar JSON</Button>
-          <Button variant="outline" onClick={resetToSeed}>Restablecer</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={agregarFila}>
+            + Agregar trabajador
+          </Button>
+          <Button onClick={guardar} disabled={guardando}>
+            {guardando ? "Guardando..." : "Guardar parámetros"}
+          </Button>
         </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardContent className="p-4 flex flex-col gap-3">
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Label className="text-sm">Empresa</Label>
-              <select value={empresaTab} onChange={(e)=>setEmpresaTab(e.target.value)} className="w-64 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-                <option value="todas">Todas</option>
-                <option value="Innovart Metal Design">Innovart Metal Design</option>
-                <option value="EG Automation SA de CV">EG Automation SA de CV</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2 flex-1">
-              <Label className="text-sm">Buscar</Label>
-              <Input placeholder="Nombre o área" value={q} onChange={e=>setQ(e.target.value)} />
-            </div>
-            <Button onClick={()=>setAddOpen(true)}>Agregar trabajador</Button>
-          </div>
-          <Alert className="bg-muted/40">
-            <AlertTitle>Regla de vales</AlertTitle>
-            <AlertDescription>
-              Innovart: límite por persona predeterminado en <b>{currency(1375.78)}</b>. EG: por defecto 0 (puedes modificar por empleado).
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-sm">
+      <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-12 gap-0 text-sm font-semibold border-b bg-muted/30">
-            <div className="p-3 col-span-3">Trabajador</div>
-            <div className="p-3 col-span-2">Área</div>
-            <div className="p-3 col-span-2">Sueldo mensual</div>
-            <div className="p-3 col-span-3">Bonos mensuales (percepciones / descuentos)</div>
-            <div className="p-3 col-span-2">Límite vales</div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs border">
+              <colgroup>
+                <col style={{ width: "8rem" }} />   {/* Empresa */}
+                <col style={{ width: "14rem" }} />  {/* Nombre */}
+                <col style={{ width: "12rem" }} />  {/* Departamento */}
+                <col style={{ width: "8rem" }} />   {/* Sueldo mensual */}
+                <col style={{ width: "8rem" }} />   {/* Fecha ingreso */}
+                <col style={{ width: "7rem" }} />   {/* Bono asistencia */}
+                <col style={{ width: "7rem" }} />   {/* Bono limpieza */}
+                <col style={{ width: "7rem" }} />   {/* Bono productividad */}
+                <col style={{ width: "7rem" }} />   {/* Infonavit */}
+                <col style={{ width: "6rem" }} />   {/* Alta IMSS */}
+                <col style={{ width: "7rem" }} />   {/* SDI IMSS */}
+                <col style={{ width: "7rem" }} />   {/* Límite vales */}
+                <col style={{ width: "7rem" }} />   {/* Dispersión base */}
+                <col style={{ width: "7rem" }} />   {/* Prima vacacional */}
+                <col style={{ width: "7rem" }} />   {/* Aguinaldo */}
+                <col style={{ width: "5rem" }} />   {/* Acciones */}
+              </colgroup>
+
+              <thead className="bg-gray-100 border-b">
+                <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:border-r">
+                  <th>EMPRESA</th>
+                  <th>NOMBRE DEL EMPLEADO</th>
+                  <th>DEPARTAMENTO</th>
+                  <th>SUELDO MENSUAL (30 días)</th>
+                  <th>FECHA DE INGRESO</th>
+                  <th>Bº PUNTUALIDAD Y ASISTENCIA</th>
+                  <th>BONO DE ORDEN Y LIMPIEZA</th>
+                  <th>BONO DE PRODUCTIVIDAD</th>
+                  <th>INFONAVIT CRÉDITO</th>
+                  <th>ALTA EN IMSS</th>
+                  <th>SDI IMSS</th>
+                  <th>LÍMITE VALES</th>
+                  <th>DISPERSIÓN BASE</th>
+                  <th>PRIMA VACACIONAL</th>
+                  <th>AGUINALDO</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody className="[&>tr>td]:px-2 [&>tr>td]:py-1.5">
+                {filas.map((fila, idx) => {
+                  const bg = idx % 2 ? "bg-white" : "bg-gray-50/60";
+                  return (
+                    <tr key={fila.id} className={`${bg} border-b`}>
+                      {/* Empresa */}
+                      <td className="border-r">
+                        <Input
+                          value={fila.empresa}
+                          onChange={(e) =>
+                            handleChange(fila.id, "empresa", e.target.value)
+                          }
+                          className="h-8 text-xs"
+                          placeholder="Empresa"
+                        />
+                      </td>
+
+                      {/* Nombre */}
+                      <td className="border-r">
+                        <Input
+                          value={fila.nombre}
+                          onChange={(e) =>
+                            handleChange(fila.id, "nombre", e.target.value)
+                          }
+                          className="h-8 text-xs"
+                          placeholder="Nombre completo"
+                        />
+                      </td>
+
+                      {/* Departamento / área */}
+                      <td className="border-r">
+                        <Input
+                          value={fila.area}
+                          onChange={(e) =>
+                            handleChange(fila.id, "area", e.target.value)
+                          }
+                          className="h-8 text-xs"
+                          placeholder="Área / Puesto"
+                        />
+                      </td>
+
+                      {/* Sueldo mensual */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.sueldoMensual}
+                          onChange={(e) =>
+                            handleChange(fila.id, "sueldoMensual", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                        <div className="text-[10px] text-gray-500">
+                          {fila.sueldoMensual ? currency(fila.sueldoMensual) : ""}
+                        </div>
+                      </td>
+
+                      {/* Fecha ingreso */}
+                      <td className="border-r">
+                        <Input
+                          type="date"
+                          className="h-8 text-xs"
+                          value={fila.fechaIngreso || ""}
+                          onChange={(e) =>
+                            handleChange(fila.id, "fechaIngreso", e.target.value)
+                          }
+                        />
+                      </td>
+
+                      {/* Bono asistencia */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.bonoAsistencia}
+                          onChange={(e) =>
+                            handleChange(fila.id, "bonoAsistencia", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Bono limpieza */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.bonoLimpieza}
+                          onChange={(e) =>
+                            handleChange(fila.id, "bonoLimpieza", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Bono productividad */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.bonoProductividad}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "bonoProductividad",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Infonavit crédito */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.infonavitCredito}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "infonavitCredito",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Alta en IMSS */}
+                      <td className="border-r text-center">
+                        <Label className="inline-flex items-center gap-1 text-[11px]">
+                          <input
+                            type="checkbox"
+                            checked={fila.altaIMSS}
+                            onChange={() => handleToggleAltaIMSS(fila.id)}
+                          />
+                          <span>{fila.altaIMSS ? "Sí" : "No"}</span>
+                        </Label>
+                      </td>
+
+                      {/* SDI IMSS */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.sdi}
+                          onChange={(e) =>
+                            handleChange(fila.id, "sdi", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Límite vales */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.limiteVales}
+                          onChange={(e) =>
+                            handleChange(fila.id, "limiteVales", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Dispersión base (opcional, solo referencia para ti) */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.dispersion}
+                          onChange={(e) =>
+                            handleChange(fila.id, "dispersion", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Prima vacacional */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.primaVacacional}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "primaVacacional",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Aguinaldo */}
+                      <td className="border-r">
+                        <Input
+                          type="number"
+                          className="h-8 text-right text-xs"
+                          value={fila.aguinaldo}
+                          onChange={(e) =>
+                            handleChange(fila.id, "aguinaldo", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Acciones */}
+                      <td className="text-center">
+                        <button
+                          type="button"
+                          className="text-[11px] text-red-600 hover:underline"
+                          onClick={() => eliminarFila(fila.id)}
+                        >
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filas.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={16}
+                      className="py-6 text-center text-gray-500 text-sm"
+                    >
+                      No hay trabajadores configurados.{" "}
+                      <button
+                        className="text-blue-600 underline"
+                        type="button"
+                        onClick={agregarFila}
+                      >
+                        Agregar el primero
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-          {filtered.map((emp) => {
-            const tb = totalBonos(emp);
-            return (
-              <div key={emp.id} className="grid grid-cols-12 items-start border-b hover:bg-muted/10">
-                <div className="p-3 col-span-3">
-                  <div className="font-medium leading-tight">{emp.nombre}</div>
-                  <div className="text-xs text-muted-foreground">{emp.empresa}</div>
-                  <Button variant="ghost" size="sm" className="mt-1 text-red-600" onClick={()=>removeEmployee(emp.id)}>Eliminar</Button>
-                </div>
-                <div className="p-3 col-span-2"><Input value={emp.area} onChange={(e)=>updateEmployee(emp.id, { area: e.target.value })} /></div>
-                <div className="p-3 col-span-2">
-                  <Input type="number" step="0.01" value={emp.sueldoMensual} onChange={(e)=>updateEmployee(emp.id, { sueldoMensual: parseFloat(e.target.value||"0") })} />
-                  <div className="mt-1 text-xs text-muted-foreground">{currency(emp.sueldoMensual)}</div>
-                </div>
-                <div className="p-3 col-span-3">
-                  <div className="space-y-2">
-                    {emp.bonos.length === 0 && (<div className="text-xs text-muted-foreground">Sin bonos</div>)}
-                    {emp.bonos.map((b) => (
-                      <div key={b.id} className="flex items-center gap-2">
-                        <select className="w-36 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs" value={b.tipo} onChange={(e)=>updateBonus(emp.id, b.id, { tipo: e.target.value })}>
-                          <option value="percepcion">Percepción (+)</option>
-                          <option value="descuento">Descuento (−)</option>
-                        </select>
-                        <Input className="flex-1" value={b.nombre} onChange={(e)=>updateBonus(emp.id, b.id, { nombre: e.target.value })} />
-                        <Input type="number" step="0.01" className="w-36" value={b.monto} onChange={(e)=>updateBonus(emp.id, b.id, { monto: parseFloat(e.target.value||"0") })} />
-                        <Button variant="ghost" size="icon" onClick={()=>removeBonus(emp.id, b.id)}>Quitar</Button>
-                      </div>
-                    ))}
-                    <div className="flex flex-wrap gap-2 justify-between items-center">
-                      <div className="text-xs space-x-2">
-                        <Badge variant="secondary">Percepciones: {currency(tb.percep)}</Badge>
-                        <Badge variant="secondary" className="ml-1">Descuentos: {currency(tb.desc)}</Badge>
-                        <Badge>Bonos netos: {currency(tb.neto)}</Badge>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="secondary" onClick={()=>addBonus(emp.id, { nombre: "Ajuste especial", monto: 0, tipo: "descuento" })}>Agregar descuento</Button>
-                        <Button size="sm" onClick={()=>addBonus(emp.id)}>Agregar bono</Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-3 col-span-2">
-                  <Input type="number" step="0.01" value={emp.limiteVales} onChange={(e)=>updateEmployee(emp.id, { limiteVales: parseFloat(e.target.value||"0") })} />
-                  <div className="mt-1 text-xs text-muted-foreground">{currency(emp.limiteVales)}</div>
-                </div>
-              </div>
-            );
-          })}
         </CardContent>
       </Card>
-
-      <Card className="shadow-sm">
-        <CardContent className="p-4 grid md:grid-cols-3 gap-3 text-sm">
-          <div className="p-3 rounded-xl bg-muted/40">
-            <div className="text-xs text-muted-foreground">Registros en vista</div>
-            <div className="text-xl font-bold">{filtered.length}</div>
-          </div>
-          <div className="p-3 rounded-xl bg-muted/40">
-            <div className="text-xs text-muted-foreground">Suma sueldos mensuales</div>
-            <div className="text-xl font-bold">{currency(filtered.reduce((a,e)=>a+e.sueldoMensual,0))}</div>
-          </div>
-          <div className="p-3 rounded-xl bg-muted/40">
-            <div className="text-xs text-muted-foreground">Suma neta de bonos</div>
-            <div className="text-xl font-bold">{currency(filtered.reduce((a,e)=>{ const t = e.bonos.reduce((acc,b)=> acc + (b.tipo === "percepcion" ? (Number(b.monto)||0) : -(Number(b.monto)||0)), 0); return a + t; },0))}</div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Modales */}
-      <Modal
-        open={addOpen}
-        onClose={()=>setAddOpen(false)}
-        title="Nuevo trabajador"
-        footer={<>
-          <Button variant="secondary" onClick={()=>setAddOpen(false)}>Cancelar</Button>
-          <Button onClick={addEmployee}>Agregar</Button>
-        </>}
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Empresa</Label>
-            <select value={newEmp.empresa} onChange={(e)=>setNewEmp(p=>({ ...p, empresa: e.target.value, limiteVales: e.target.value === "Innovart Metal Design" ? 1375.78 : 0 }))} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
-              <option value="Innovart Metal Design">Innovart Metal Design</option>
-              <option value="EG Automation SA de CV">EG Automation SA de CV</option>
-            </select>
-          </div>
-          <div>
-            <Label>Área</Label>
-            <Input value={newEmp.area || ""} onChange={e=>setNewEmp(p=>({ ...p, area: e.target.value }))} />
-          </div>
-          <div className="col-span-2">
-            <Label>Nombre</Label>
-            <Input value={newEmp.nombre || ""} onChange={e=>setNewEmp(p=>({ ...p, nombre: e.target.value }))} />
-          </div>
-          <div>
-            <Label>Sueldo mensual</Label>
-            <Input type="number" step="0.01" value={newEmp.sueldoMensual || ""} onChange={e=>setNewEmp(p=>({ ...p, sueldoMensual: parseFloat(e.target.value||"0") }))} />
-          </div>
-          <div>
-            <Label>Límite vales</Label>
-            <Input type="number" step="0.01" value={newEmp.limiteVales || ""} onChange={e=>setNewEmp(p=>({ ...p, limiteVales: parseFloat(e.target.value||"0") }))} />
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={importOpen}
-        onClose={()=>setImportOpen(false)}
-        title="Importar parámetros desde JSON"
-        footer={<>
-          <Button variant="secondary" onClick={()=>setImportOpen(false)}>Cancelar</Button>
-          <Button onClick={importJson}>Importar</Button>
-        </>}
-      >
-        <textarea value={importText} onChange={e=>setImportText(e.target.value)} className="w-full h-64 p-3 border rounded-md font-mono text-sm" placeholder="Pega aquí el JSON exportado"></textarea>
-      </Modal>
     </div>
   );
 }
