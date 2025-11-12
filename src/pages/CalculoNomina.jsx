@@ -158,8 +158,8 @@ export default function CalculoNomina() {
     const sueldoFiscalBruto = +r.sueldoFiscalBruto || 0; // W (editable)
     const dispersion = +r.dispersion || 0;               // X (editable)
 
-    // 👇 FIX: sin comentario dentro de la destructuración
-    const { prod: _prodIgnorado, asist, limp, descFijos } = bonosPorTipo(emp);
+    // sin comentarios dentro de la destructuración
+    const { prod: _prodIgnorado, asist, descFijos } = bonosPorTipo(emp);
 
     const sueldoDiario = (+emp.sueldoMensual || 0) / 30;
 
@@ -181,8 +181,10 @@ export default function CalculoNomina() {
     const productividadOK = meta && emp.empresa === "Innovart Metal Design";
     const prodAplicado = productividadOK ? prodFixed : 0;
 
+    // Limpieza: solo Blanca; monto fijo $250 con toggle
     const esBlanca = nombreKey.includes("blanca");
-    const limpAplicado = esBlanca && limpiezaOK ? limp : 0;
+    const LIMPIEZA_BLANCA = 250;
+    const limpAplicado = esBlanca && limpiezaOK ? LIMPIEZA_BLANCA : 0;
 
     const sumaPercepciones =
       sueldoQuincenal +
@@ -335,10 +337,8 @@ export default function CalculoNomina() {
                       const r = registros[emp.id] || {};
                       const x = calcEmpleado(emp);
 
-                      // 👇 FIX: sin comentario dentro de la destructuración
-                      const { limp } = bonosPorTipo(emp);
-
                       const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
+                      const LIMPIEZA_BLANCA = 250;
 
                       const num = "text-right font-mono whitespace-nowrap";
                       const numTab = { fontVariantNumeric: "tabular-nums" };
@@ -412,7 +412,7 @@ export default function CalculoNomina() {
                                   checked={!!r.limpiezaOK}
                                   onChange={(e) => setReg(emp.id, { limpiezaOK: e.target.checked })}
                                 />
-                                <span className="font-mono" style={numTab}>{currency(limp)}</span>
+                                <span className="font-mono" style={numTab}>{currency(LIMPIEZA_BLANCA)}</span>
                               </label>
                             ) : (
                               <span className="text-[11px] text-gray-400">—</span>
