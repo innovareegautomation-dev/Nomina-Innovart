@@ -138,9 +138,7 @@ export default function ParametrosNominaTab() {
 
   const handleToggleAltaIMSS = (id) => {
     setFilas((prev) =>
-      prev.map((f) =>
-        f.id === id ? { ...f, altaIMSS: !f.altaIMSS } : f
-      )
+      prev.map((f) => (f.id === id ? { ...f, altaIMSS: !f.altaIMSS } : f))
     );
   };
 
@@ -215,25 +213,26 @@ export default function ParametrosNominaTab() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-xs border">
+          {/* Sin scrollbar interno, tabla amplia tipo Excel */}
+          <div className="w-full">
+            <table className="table-auto min-w-[1500px] text-xs border">
               <colgroup>
                 <col style={{ width: "8rem" }} />   {/* Empresa */}
-                <col style={{ width: "14rem" }} />  {/* Nombre */}
-                <col style={{ width: "12rem" }} />  {/* Departamento */}
-                <col style={{ width: "8rem" }} />   {/* Sueldo mensual */}
-                <col style={{ width: "8rem" }} />   {/* Fecha ingreso */}
-                <col style={{ width: "7rem" }} />   {/* Bono asistencia */}
-                <col style={{ width: "7rem" }} />   {/* Bono limpieza */}
-                <col style={{ width: "7rem" }} />   {/* Bono productividad */}
-                <col style={{ width: "7rem" }} />   {/* Infonavit */}
+                <col style={{ width: "16rem" }} />  {/* Nombre */}
+                <col style={{ width: "13rem" }} />  {/* Departamento */}
+                <col style={{ width: "9rem" }} />   {/* Sueldo mensual */}
+                <col style={{ width: "9rem" }} />   {/* Fecha ingreso */}
+                <col style={{ width: "8rem" }} />   {/* Bono asistencia */}
+                <col style={{ width: "8rem" }} />   {/* Bono limpieza */}
+                <col style={{ width: "8rem" }} />   {/* Bono productividad */}
+                <col style={{ width: "7.5rem" }} /> {/* Infonavit */}
                 <col style={{ width: "6rem" }} />   {/* Alta IMSS */}
-                <col style={{ width: "7rem" }} />   {/* SDI IMSS */}
-                <col style={{ width: "7rem" }} />   {/* Límite vales */}
-                <col style={{ width: "7rem" }} />   {/* Dispersión base */}
-                <col style={{ width: "7rem" }} />   {/* Prima vacacional */}
-                <col style={{ width: "7rem" }} />   {/* Aguinaldo */}
-                <col style={{ width: "5rem" }} />   {/* Acciones */}
+                <col style={{ width: "8rem" }} />   {/* SDI IMSS */}
+                <col style={{ width: "8rem" }} />   {/* Límite vales */}
+                <col style={{ width: "9rem" }} />   {/* Dispersión base */}
+                <col style={{ width: "8rem" }} />   {/* Prima vacacional */}
+                <col style={{ width: "8rem" }} />   {/* Aguinaldo */}
+                <col style={{ width: "5.5rem" }} /> {/* Acciones */}
               </colgroup>
 
               <thead className="bg-gray-100 border-b">
@@ -260,6 +259,11 @@ export default function ParametrosNominaTab() {
               <tbody className="[&>tr>td]:px-2 [&>tr>td]:py-1.5">
                 {filas.map((fila, idx) => {
                   const bg = idx % 2 ? "bg-white" : "bg-gray-50/60";
+                  const numInputClass =
+                    "h-9 w-full px-2 text-right text-xs font-mono leading-tight";
+                  const textInputClass =
+                    "h-9 w-full px-2 text-xs leading-tight";
+
                   return (
                     <tr key={fila.id} className={`${bg} border-b`}>
                       {/* Empresa */}
@@ -269,7 +273,7 @@ export default function ParametrosNominaTab() {
                           onChange={(e) =>
                             handleChange(fila.id, "empresa", e.target.value)
                           }
-                          className="h-8 text-xs"
+                          className={textInputClass}
                           placeholder="Empresa"
                         />
                       </td>
@@ -281,7 +285,7 @@ export default function ParametrosNominaTab() {
                           onChange={(e) =>
                             handleChange(fila.id, "nombre", e.target.value)
                           }
-                          className="h-8 text-xs"
+                          className={textInputClass}
                           placeholder="Nombre completo"
                         />
                       </td>
@@ -293,7 +297,7 @@ export default function ParametrosNominaTab() {
                           onChange={(e) =>
                             handleChange(fila.id, "area", e.target.value)
                           }
-                          className="h-8 text-xs"
+                          className={textInputClass}
                           placeholder="Área / Puesto"
                         />
                       </td>
@@ -302,14 +306,18 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.sueldoMensual}
+                          className={numInputClass}
+                          value={fila.sueldoMensual ?? ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "sueldoMensual", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "sueldoMensual",
+                              e.target.value
+                            )
                           }
                           placeholder="0.00"
                         />
-                        <div className="text-[10px] text-gray-500">
+                        <div className="text-[10px] text-gray-500 font-mono">
                           {fila.sueldoMensual ? currency(fila.sueldoMensual) : ""}
                         </div>
                       </td>
@@ -318,10 +326,14 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="date"
-                          className="h-8 text-xs"
+                          className={textInputClass}
                           value={fila.fechaIngreso || ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "fechaIngreso", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "fechaIngreso",
+                              e.target.value
+                            )
                           }
                         />
                       </td>
@@ -330,10 +342,14 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.bonoAsistencia}
+                          className={numInputClass}
+                          value={fila.bonoAsistencia ?? ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "bonoAsistencia", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "bonoAsistencia",
+                              e.target.value
+                            )
                           }
                           placeholder="0.00"
                         />
@@ -343,10 +359,14 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.bonoLimpieza}
+                          className={numInputClass}
+                          value={fila.bonoLimpieza ?? ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "bonoLimpieza", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "bonoLimpieza",
+                              e.target.value
+                            )
                           }
                           placeholder="0.00"
                         />
@@ -356,8 +376,8 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.bonoProductividad}
+                          className={numInputClass}
+                          value={fila.bonoProductividad ?? ""}
                           onChange={(e) =>
                             handleChange(
                               fila.id,
@@ -373,8 +393,8 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.infonavitCredito}
+                          className={numInputClass}
+                          value={fila.infonavitCredito ?? ""}
                           onChange={(e) =>
                             handleChange(
                               fila.id,
@@ -388,7 +408,7 @@ export default function ParametrosNominaTab() {
 
                       {/* Alta en IMSS */}
                       <td className="border-r text-center">
-                        <Label className="inline-flex items-center gap-1 text-[11px]">
+                        <Label className="inline-flex items-center justify-center gap-1 text-[11px]">
                           <input
                             type="checkbox"
                             checked={fila.altaIMSS}
@@ -402,8 +422,8 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.sdi}
+                          className={numInputClass}
+                          value={fila.sdi ?? ""}
                           onChange={(e) =>
                             handleChange(fila.id, "sdi", e.target.value)
                           }
@@ -415,23 +435,31 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.limiteVales}
+                          className={numInputClass}
+                          value={fila.limiteVales ?? ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "limiteVales", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "limiteVales",
+                              e.target.value
+                            )
                           }
                           placeholder="0.00"
                         />
                       </td>
 
-                      {/* Dispersión base (opcional, solo referencia para ti) */}
+                      {/* Dispersión base (referencia) */}
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.dispersion}
+                          className={numInputClass}
+                          value={fila.dispersion ?? ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "dispersion", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "dispersion",
+                              e.target.value
+                            )
                           }
                           placeholder="0.00"
                         />
@@ -441,8 +469,8 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.primaVacacional}
+                          className={numInputClass}
+                          value={fila.primaVacacional ?? ""}
                           onChange={(e) =>
                             handleChange(
                               fila.id,
@@ -458,10 +486,14 @@ export default function ParametrosNominaTab() {
                       <td className="border-r">
                         <Input
                           type="number"
-                          className="h-8 text-right text-xs"
-                          value={fila.aguinaldo}
+                          className={numInputClass}
+                          value={fila.aguinaldo ?? ""}
                           onChange={(e) =>
-                            handleChange(fila.id, "aguinaldo", e.target.value)
+                            handleChange(
+                              fila.id,
+                              "aguinaldo",
+                              e.target.value
+                            )
                           }
                           placeholder="0.00"
                         />
