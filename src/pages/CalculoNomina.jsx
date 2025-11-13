@@ -1,6 +1,5 @@
 // src/pages/ParametrosNominaTab.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -183,15 +182,15 @@ export default function ParametrosNominaTab() {
     }
   };
 
+  // Estilos base para inputs
   const inputBase =
-    "h-9 w-full rounded-2xl border border-gray-200 bg-white px-2 text-[13px] leading-tight focus-visible:ring-1 focus-visible:ring-black";
-
+    "h-10 w-full rounded-2xl border border-gray-200 bg-white px-3 text-[14px] leading-tight focus-visible:ring-1 focus-visible:ring-black";
   const inputNum =
-    inputBase +
-    " font-mono text-right tabular-nums";
+    inputBase + " font-mono text-right tabular-nums";
 
   return (
-    <div className="p-6 space-y-4">
+    // w-full y sin max-width: aprovechamos todo el ancho que nos dé el layout
+    <div className="w-full px-6 py-6 space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Parámetros de Nómina</h1>
@@ -215,327 +214,327 @@ export default function ParametrosNominaTab() {
         </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardContent className="p-0">
-          {/* w-full para que ocupe todo el ancho del contenedor */}
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-[13px] border border-gray-200">
-              <colgroup>
-                <col style={{ width: "8rem" }} />   {/* Empresa */}
-                <col style={{ width: "14rem" }} />  {/* Nombre */}
-                <col style={{ width: "12rem" }} />  {/* Departamento */}
-                <col style={{ width: "9rem" }} />   {/* Sueldo mensual */}
-                <col style={{ width: "9rem" }} />   {/* Fecha ingreso */}
-                <col style={{ width: "8rem" }} />   {/* Bono asistencia */}
-                <col style={{ width: "8rem" }} />   {/* Bono limpieza */}
-                <col style={{ width: "8rem" }} />   {/* Bono productividad */}
-                <col style={{ width: "8rem" }} />   {/* Infonavit */}
-                <col style={{ width: "7rem" }} />   {/* Alta IMSS */}
-                <col style={{ width: "8.5rem" }} /> {/* SDI IMSS (más ancho) */}
-                <col style={{ width: "8.5rem" }} /> {/* Límite vales (más ancho) */}
-                <col style={{ width: "8rem" }} />   {/* Dispersión base */}
-                <col style={{ width: "8rem" }} />   {/* Prima vacacional */}
-                <col style={{ width: "8rem" }} />   {/* Aguinaldo */}
-                <col style={{ width: "5rem" }} />   {/* Acciones */}
-              </colgroup>
+      {/* Contenedor grande tipo “card” pero a ancho completo */}
+      <div className="mt-2 w-full rounded-3xl border border-gray-200 bg-white shadow-sm">
+        {/* Quitamos padding lateral para no encoger la tabla */}
+        <div className="w-full overflow-x-auto rounded-3xl">
+          <table className="min-w-full border-collapse text-[13px] border border-gray-200">
+            <colgroup>
+              <col style={{ width: "8rem" }} />     {/* Empresa */}
+              <col style={{ width: "14rem" }} />    {/* Nombre */}
+              <col style={{ width: "12rem" }} />    {/* Departamento */}
+              <col style={{ width: "9rem" }} />     {/* Sueldo mensual */}
+              <col style={{ width: "9rem" }} />     {/* Fecha ingreso */}
+              <col style={{ width: "8rem" }} />     {/* Bono asistencia */}
+              <col style={{ width: "8rem" }} />     {/* Bono limpieza */}
+              <col style={{ width: "8rem" }} />     {/* Bono productividad */}
+              <col style={{ width: "8rem" }} />     {/* Infonavit */}
+              <col style={{ width: "7rem" }} />     {/* Alta IMSS */}
+              <col style={{ width: "9.5rem" }} />   {/* SDI IMSS MÁS ANCHO */}
+              <col style={{ width: "9.5rem" }} />   {/* Límite vales MÁS ANCHO */}
+              <col style={{ width: "8.5rem" }} />   {/* Dispersión base */}
+              <col style={{ width: "8.5rem" }} />   {/* Prima vacacional */}
+              <col style={{ width: "8.5rem" }} />   {/* Aguinaldo */}
+              <col style={{ width: "5rem" }} />     {/* Acciones */}
+            </colgroup>
 
-              <thead className="bg-gray-100/80 text-[11px] font-semibold uppercase tracking-wide text-gray-800">
-                <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:border-r [&>th]:border-gray-200 text-center">
-                  <th>EMPRESA</th>
-                  <th>NOMBRE DEL EMPLEADO</th>
-                  <th>DEPARTAMENTO</th>
-                  <th>SUELDO MENSUAL (30 días)</th>
-                  <th>FECHA DE INGRESO</th>
-                  <th>Bº PUNTUALIDAD Y ASISTENCIA</th>
-                  <th>BONO DE ORDEN Y LIMPIEZA</th>
-                  <th>BONO DE PRODUCTIVIDAD</th>
-                  <th>INFONAVIT CRÉDITO</th>
-                  <th>ALTA EN IMSS</th>
-                  <th>SDI IMSS</th>
-                  <th>LÍMITE VALES</th>
-                  <th>DISPERSIÓN BASE</th>
-                  <th>PRIMA VACACIONAL</th>
-                  <th>AGUINALDO</th>
-                  <th></th>
-                </tr>
-              </thead>
+            <thead className="bg-gray-100/80 text-[11px] font-semibold uppercase tracking-wide text-gray-800">
+              <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:border-r [&>th]:border-gray-200 text-center">
+                <th>EMPRESA</th>
+                <th>NOMBRE DEL EMPLEADO</th>
+                <th>DEPARTAMENTO</th>
+                <th>SUELDO MENSUAL (30 días)</th>
+                <th>FECHA DE INGRESO</th>
+                <th>Bº PUNTUALIDAD Y ASISTENCIA</th>
+                <th>BONO DE ORDEN Y LIMPIEZA</th>
+                <th>BONO DE PRODUCTIVIDAD</th>
+                <th>INFONAVIT CRÉDITO</th>
+                <th>ALTA EN IMSS</th>
+                <th>SDI IMSS</th>
+                <th>LÍMITE VALES</th>
+                <th>DISPERSIÓN BASE</th>
+                <th>PRIMA VACACIONAL</th>
+                <th>AGUINALDO</th>
+                <th></th>
+              </tr>
+            </thead>
 
-              <tbody className="[&>tr>td]:px-2 [&>tr>td]:py-1.5">
-                {filas.map((fila, idx) => {
-                  const bg = idx % 2 ? "bg-white" : "bg-gray-50/60";
-                  return (
-                    <tr key={fila.id} className={`${bg} border-b border-gray-200`}>
-                      {/* Empresa */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          value={fila.empresa}
-                          onChange={(e) =>
-                            handleChange(fila.id, "empresa", e.target.value)
-                          }
-                          className={inputBase + " text-xs"}
-                          placeholder="Empresa"
+            <tbody className="[&>tr>td]:px-3 [&>tr>td]:py-2">
+              {filas.map((fila, idx) => {
+                const bg = idx % 2 ? "bg-white" : "bg-gray-50/60";
+                return (
+                  <tr
+                    key={fila.id}
+                    className={`${bg} border-b border-gray-200 align-top`}
+                  >
+                    {/* Empresa */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        value={fila.empresa}
+                        onChange={(e) =>
+                          handleChange(fila.id, "empresa", e.target.value)
+                        }
+                        className={inputBase + " text-xs"}
+                        placeholder="Empresa"
+                      />
+                    </td>
+
+                    {/* Nombre */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        value={fila.nombre}
+                        onChange={(e) =>
+                          handleChange(fila.id, "nombre", e.target.value)
+                        }
+                        className={inputBase + " text-xs"}
+                        placeholder="Nombre completo"
+                      />
+                    </td>
+
+                    {/* Departamento */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        value={fila.area}
+                        onChange={(e) =>
+                          handleChange(fila.id, "area", e.target.value)
+                        }
+                        className={inputBase + " text-xs"}
+                        placeholder="Área / Puesto"
+                      />
+                    </td>
+
+                    {/* Sueldo mensual */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.sueldoMensual}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "sueldoMensual",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                      <div className="mt-0.5 text-[10px] text-gray-500">
+                        {fila.sueldoMensual
+                          ? currency(fila.sueldoMensual)
+                          : ""}
+                      </div>
+                    </td>
+
+                    {/* Fecha ingreso */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="date"
+                        className={inputBase + " text-xs"}
+                        value={fila.fechaIngreso || ""}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "fechaIngreso",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </td>
+
+                    {/* Bono asistencia */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.bonoAsistencia}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "bonoAsistencia",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
+
+                    {/* Bono limpieza */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.bonoLimpieza}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "bonoLimpieza",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
+
+                    {/* Bono productividad */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.bonoProductividad}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "bonoProductividad",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
+
+                    {/* Infonavit */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.infonavitCredito}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "infonavitCredito",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
+
+                    {/* Alta IMSS */}
+                    <td className="border-r border-gray-200 text-center">
+                      <Label className="inline-flex items-center justify-center gap-1 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={fila.altaIMSS}
+                          onChange={() => handleToggleAltaIMSS(fila.id)}
                         />
-                      </td>
+                        <span>{fila.altaIMSS ? "Sí" : "No"}</span>
+                      </Label>
+                    </td>
 
-                      {/* Nombre */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          value={fila.nombre}
-                          onChange={(e) =>
-                            handleChange(fila.id, "nombre", e.target.value)
-                          }
-                          className={inputBase + " text-xs"}
-                          placeholder="Nombre completo"
-                        />
-                      </td>
+                    {/* SDI IMSS  (TEXT para que quepa todo el número) */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        className={inputNum}
+                        value={fila.sdi}
+                        onChange={(e) =>
+                          handleChange(fila.id, "sdi", e.target.value)
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
 
-                      {/* Departamento / área */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          value={fila.area}
-                          onChange={(e) =>
-                            handleChange(fila.id, "area", e.target.value)
-                          }
-                          className={inputBase + " text-xs"}
-                          placeholder="Área / Puesto"
-                        />
-                      </td>
+                    {/* Límite vales  (TEXT también) */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        className={inputNum}
+                        value={fila.limiteVales}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "limiteVales",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
 
-                      {/* Sueldo mensual */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.sueldoMensual}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "sueldoMensual",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                        <div className="mt-0.5 text-[10px] text-gray-500">
-                          {fila.sueldoMensual
-                            ? currency(fila.sueldoMensual)
-                            : ""}
-                        </div>
-                      </td>
+                    {/* Dispersión base */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.dispersion}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "dispersion",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
 
-                      {/* Fecha ingreso */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="date"
-                          className={inputBase + " text-xs"}
-                          value={fila.fechaIngreso || ""}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "fechaIngreso",
-                              e.target.value
-                            )
-                          }
-                        />
-                      </td>
+                    {/* Prima vacacional */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.primaVacacional}
+                        onChange={(e) =>
+                          handleChange(
+                            fila.id,
+                            "primaVacacional",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
 
-                      {/* Bono asistencia */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.bonoAsistencia}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "bonoAsistencia",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
+                    {/* Aguinaldo */}
+                    <td className="border-r border-gray-200">
+                      <Input
+                        type="number"
+                        className={inputNum}
+                        value={fila.aguinaldo}
+                        onChange={(e) =>
+                          handleChange(fila.id, "aguinaldo", e.target.value)
+                        }
+                        placeholder="0.00"
+                      />
+                    </td>
 
-                      {/* Bono limpieza */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.bonoLimpieza}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "bonoLimpieza",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Bono productividad */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.bonoProductividad}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "bonoProductividad",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Infonavit crédito */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.infonavitCredito}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "infonavitCredito",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Alta en IMSS */}
-                      <td className="border-r border-gray-200 align-top text-center">
-                        <Label className="inline-flex items-center justify-center gap-1 text-[11px]">
-                          <input
-                            type="checkbox"
-                            checked={fila.altaIMSS}
-                            onChange={() => handleToggleAltaIMSS(fila.id)}
-                          />
-                          <span>{fila.altaIMSS ? "Sí" : "No"}</span>
-                        </Label>
-                      </td>
-
-                      {/* SDI IMSS */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.sdi}
-                          onChange={(e) =>
-                            handleChange(fila.id, "sdi", e.target.value)
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Límite vales */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.limiteVales}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "limiteVales",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Dispersión base */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.dispersion}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "dispersion",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Prima vacacional */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.primaVacacional}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "primaVacacional",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Aguinaldo */}
-                      <td className="border-r border-gray-200 align-top">
-                        <Input
-                          type="number"
-                          className={inputNum}
-                          value={fila.aguinaldo}
-                          onChange={(e) =>
-                            handleChange(
-                              fila.id,
-                              "aguinaldo",
-                              e.target.value
-                            )
-                          }
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Acciones */}
-                      <td className="align-top text-center">
-                        <button
-                          type="button"
-                          className="text-[11px] text-red-600 hover:underline"
-                          onClick={() => eliminarFila(fila.id)}
-                        >
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {filas.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={16}
-                      className="py-6 text-center text-sm text-gray-500"
-                    >
-                      No hay trabajadores configurados.{" "}
+                    {/* Acciones */}
+                    <td className="text-center">
                       <button
-                        className="text-blue-600 underline"
                         type="button"
-                        onClick={agregarFila}
+                        className="text-[11px] text-red-600 hover:underline"
+                        onClick={() => eliminarFila(fila.id)}
                       >
-                        Agregar el primero
+                        Eliminar
                       </button>
                     </td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+                );
+              })}
+
+              {filas.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={16}
+                    className="py-6 text-center text-sm text-gray-500"
+                  >
+                    No hay trabajadores configurados.{" "}
+                    <button
+                      className="text-blue-600 underline"
+                      type="button"
+                      onClick={agregarFila}
+                    >
+                      Agregar el primero
+                    </button>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
