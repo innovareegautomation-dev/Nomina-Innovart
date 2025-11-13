@@ -99,8 +99,7 @@ export default function CalculoNomina() {
   }, [pKey, registros]);
 
   const semana = weekNumber(fecha);
-  const diasPeriodo =
-    periodo === "quincenal" ? daysInFortnight(fecha) : 7; // 7 días para semanal
+  const diasPeriodo = periodo === "quincenal" ? daysInFortnight(fecha) : 7;
 
   // Agrupar empleados por empresa
   const grupos = useMemo(() => {
@@ -141,8 +140,17 @@ export default function CalculoNomina() {
     const incentivos = +r.otrosIncentivos || 0;
     const otrosDesc = +r.otrosDescuentos || 0;
     const limpiezaOK = !!r.limpiezaOK;
-    const sueldoFiscalBruto = +r.sueldoFiscalBruto || 0; // W
-    const dispersion = +r.dispersion || 0; // X
+
+    // Si hubiera sueldoFiscalBruto / dispersion guardados, se respetan,
+    // de lo contrario se toma la dispersión de parámetros (dispersionBase)
+    const sueldoFiscalBruto =
+      r.sueldoFiscalBruto != null
+        ? +r.sueldoFiscalBruto
+        : +emp.sueldoFiscalBruto || 0;
+    const dispersion =
+      r.dispersion != null
+        ? +r.dispersion
+        : +emp.dispersionBase || 0;
 
     const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
 
@@ -166,9 +174,9 @@ export default function CalculoNomina() {
     const descRetardos = sueldoDiario * Math.floor(retardos / 4);
     const pagoHoras = (sueldoDiario / 8) * horas;
 
-    // Productividad: se paga solo si hay meta cumplida Y asistencia ok
+    // Productividad: depende SOLO de la meta y de que sea Innovart (ya no de la asistencia)
     const prodBase = prod;
-    const productividadOK = meta && asistenciaOK;
+    const productividadOK = meta;
     const prodAplicado =
       productividadOK && emp.empresa === "Innovart Metal Design"
         ? prodBase
@@ -187,10 +195,10 @@ export default function CalculoNomina() {
       otrosDesc -
       descFijos;
 
-    const interna = sumaPercepciones - sueldoFiscalBruto;
+    // Si no hay sueldoFiscalBruto, interna = sumaPercepciones
+    const interna = sumaPercepciones - (sueldoFiscalBruto || 0);
     const neto = dispersion + interna;
 
-    // SDI viene ahora directamente de parámetros
     const sdi = +emp.sdi || 0;
 
     return {
@@ -232,7 +240,6 @@ export default function CalculoNomina() {
     );
 
   const periodoLabel = periodo === "quincenal" ? "quincenal" : "semanal";
-
   const periodBtnBase =
     "px-3 py-1 text-xs font-medium rounded-full transition-colors";
 
@@ -316,7 +323,7 @@ export default function CalculoNomina() {
           Meta cumplida
           <span className="text-gray-500">
             {" "}
-            (activa productividad solo si también hay asistencia)
+            (activa productividad solo Innovart)
           </span>
         </label>
       </div>
@@ -332,22 +339,19 @@ export default function CalculoNomina() {
               <div className="overflow-x-auto">
                 <table className="table-fixed w-full text-sm border">
                   <colgroup>
-                    <col style={{ width: "22rem" }} />
-                    <col style={{ width: "12rem" }} />
-                    <col style={{ width: "6rem" }} />
-                    <col style={{ width: "6rem" }} />
-                    <col style={{ width: "6.5rem" }} />
-                    <col style={{ width: "7.5rem" }} />
-                    <col style={{ width: "7.5rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "7rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "9rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "9rem" }} />
-                    <col style={{ width: "10rem" }} />
+                    <col style={{ width: "22rem" }} /> {/* Nombre */}
+                    <col style={{ width: "6rem" }} />  {/* Faltas */}
+                    <col style={{ width: "6rem" }} />  {/* Retardos */}
+                    <col style={{ width: "6.5rem" }} />{/* Horas extra */}
+                    <col style={{ width: "7.5rem" }} />{/* Productividad */}
+                    <col style={{ width: "7.5rem" }} />{/* Asistencia */}
+                    <col style={{ width: "8rem" }} />  {/* Limpieza */}
+                    <col style={{ width: "8rem" }} />  {/* Otros incentivos */}
+                    <col style={{ width: "8rem" }} />  {/* Otros descuentos */}
+                    <col style={{ width: "7rem" }} />  {/* Vales */}
+                    <col style={{ width: "8rem" }} />  {/* SDI */}
+                    <col style={{ width: "9rem" }} />  {/* Interna */}
+                    <col style={{ width: "10rem" }} /> {/* Neto */}
                   </colgroup>
 
                   <thead className="bg-gray-50 text-xs uppercase">
@@ -355,7 +359,6 @@ export default function CalculoNomina() {
                       <th className="sticky left-0 z-20 bg-gray-50">
                         Nombre del empleado
                       </th>
-                      <th>Área</th>
                       <th>Faltas</th>
                       <th>Retardos</th>
                       <th>Horas extra</th>
@@ -366,8 +369,6 @@ export default function CalculoNomina() {
                       <th>Otros descuentos</th>
                       <th>Vales</th>
                       <th>SDI (IMSS)</th>
-                      <th>Sueldo fiscal bruto</th>
-                      <th>Dispersión</th>
                       <th>INTERNAL</th>
                       <th>Sueldo neto {periodoLabel}</th>
                     </tr>
@@ -377,13 +378,14 @@ export default function CalculoNomina() {
                     {emps.map((emp, idx) => {
                       const r = registros[emp.id] || {};
                       const x = calcEmpleado(emp);
-
                       const { prod, limp } = bonosPorTipo(emp);
                       const tieneLimpieza = limp > 0;
 
                       const num = "text-right font-mono whitespace-nowrap";
                       const numTab = { fontVariantNumeric: "tabular-nums" };
-                      const stickyBg = idx % 2 ? "bg-gray-50/60" : "bg-white";
+
+                      // Fondo sólido (sin transparencia) para la celda sticky
+                      const stickyBg = idx % 2 ? "bg-gray-50" : "bg-white";
 
                       const prodMostrar = prod || 0;
                       const asistMostrar = x.asistenciaBase;
@@ -391,18 +393,22 @@ export default function CalculoNomina() {
                       return (
                         <tr
                           key={emp.id}
-                          className="odd:bg-white even:bg-gray-50/60 border-b"
+                          className="odd:bg-white even:bg-gray-50 border-b"
                         >
+                          {/* Columna fija: nombre / puesto / sueldo */}
                           <td className={`sticky left-0 z-10 ${stickyBg}`}>
                             <div className="font-medium leading-tight truncate">
                               {emp.nombre}
                             </div>
+                            {emp.area && (
+                              <div className="text-[11px] text-gray-500">
+                                {emp.area}
+                              </div>
+                            )}
                             <div className="text-[11px] text-gray-500">
                               {currency(emp.sueldoMensual)} / mes
                             </div>
                           </td>
-
-                          <td className="truncate">{emp.area}</td>
 
                           {/* Faltas */}
                           <td>
@@ -568,44 +574,6 @@ export default function CalculoNomina() {
                             {x.sdi ? currency(x.sdi) : "—"}
                           </td>
 
-                          {/* Sueldo fiscal bruto */}
-                          <td>
-                            <Input
-                              aria-label="Sueldo fiscal bruto"
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="h-9 text-right"
-                              value={r.sueldoFiscalBruto || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  sueldoFiscalBruto: parseFloat(
-                                    e.target.value || "0"
-                                  ),
-                                })
-                              }
-                            />
-                          </td>
-
-                          {/* Dispersión */}
-                          <td>
-                            <Input
-                              aria-label="Dispersión"
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="h-9 text-right"
-                              value={r.dispersion || ""}
-                              onChange={(e) =>
-                                setReg(emp.id, {
-                                  dispersion: parseFloat(
-                                    e.target.value || "0"
-                                  ),
-                                })
-                              }
-                            />
-                          </td>
-
                           {/* Interna */}
                           <td className={`${num} font-medium`} style={numTab}>
                             {currency(x.interna)}
@@ -625,17 +593,10 @@ export default function CalculoNomina() {
                       <td className="px-2.5 py-2 sticky left-0 z-10 bg-gray-100">
                         Totales de {empresa}
                       </td>
+                      {/* Faltas + retardos + horas */}
                       <td className="px-2.5 py-2" colSpan={3}></td>
-                      <td className="px-2.5 py-2">
-                        Hrs extra:{" "}
-                        <span
-                          className="font-mono"
-                          style={{ fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {currency(tot.horas)}
-                        </span>
-                      </td>
-                      <td className="px-2.5 py-2" colSpan={2}>
+                      {/* Productividad + asistencia + limpieza */}
+                      <td className="px-2.5 py-2" colSpan={3}>
                         Bonos:{" "}
                         <span
                           className="font-mono"
@@ -644,9 +605,11 @@ export default function CalculoNomina() {
                           {currency(tot.bonos)}
                         </span>
                       </td>
+                      {/* Otros incentivos + descuentos + vales */}
                       <td className="px-2.5 py-2" colSpan={3}></td>
-                      <td className="px-2.5 py-2" colSpan={1}></td>
-                      <td className="px-2.5 py-2" colSpan={1}></td>
+                      {/* SDI vacío */}
+                      <td className="px-2.5 py-2"></td>
+                      {/* Interna y neto */}
                       <td className="px-2.5 py-2">
                         INTERNAL:{" "}
                         <span
@@ -691,7 +654,14 @@ export default function CalculoNomina() {
                 acc.neto += x.neto;
                 return acc;
               },
-              { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
+              {
+                base: 0,
+                horas: 0,
+                bonos: 0,
+                percepciones: 0,
+                interna: 0,
+                neto: 0,
+              }
             );
             return (
               <div className="grid grid-cols-6 gap-3 text-sm">
