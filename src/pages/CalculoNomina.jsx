@@ -1,569 +1,539 @@
-// src/pages/CalculoNomina.jsx
-import React, { useEffect, useMemo, useState } from "react";
+// src/pages/ParametrosNominaTab.jsx
+import React, { useEffect, useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
 
-/* ================== Utilidades de fecha ================== */
-function startOfFortnight(d) {
-  const dt = new Date(d);
-  const y = dt.getFullYear();
-  const m = dt.getMonth();
-  const day = dt.getDate();
-  return day <= 15 ? new Date(y, m, 1) : new Date(y, m, 16);
-}
-function endOfFortnight(d) {
-  const dt = new Date(d);
-  const y = dt.getFullYear();
-  const m = dt.getMonth();
-  const day = dt.getDate();
-  return day <= 15 ? new Date(y, m, 15) : new Date(y, m + 1, 0);
-}
-function daysInFortnight(d) {
-  const s = startOfFortnight(d);
-  const e = endOfFortnight(d);
-  return Math.round((e - s) / 86400000) + 1; // 15 o 16
-}
-function weekNumber(d) {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-}
-function periodKey(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const half = d.getDate() <= 15 ? "H1" : "H2";
-  return `${y}-${m}-${half}`;
-}
-const currency = (n) =>
-  new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 2,
-  }).format(Number.isFinite(n) ? n : 0);
-
-/* ================== Helpers para bonos ================== */
+/* ====== Helpers de bonos (mismo criterio que en Cálculo de Nómina) ====== */
 const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
 const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
 const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
 
-/* Productividad FIJA por persona (solo Innovart) */
-function prodAmountFixed(emp) {
-  if (emp.empresa !== "Innovart Metal Design") return 0;
-  const n = (emp.nombre || "").toLowerCase();
-  if (n.includes("jorge abraham")) return 1800;
-  if (n.includes("blanca estela")) return 250;
-  if (n.includes("diego")) return 1100;
-  if (n.includes("fernando eduardo") || n.includes("moreno mondrag"))
-    return 5018.8;
-  return 0;
+function currency(n) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(+n) ? +n : 0);
 }
 
-/* Overrides puntuales de asistencia (si algún perfil no es $400) */
-const ASISTENCIA_OVERRIDE = {
-  // "gonzalo cornejo": 186.67,
-};
+/** Normaliza un registro antiguo de parámetros a la nueva forma de fila editable */
+function normalizarEmpleado(emp) {
+  const bonos = Array.isArray(emp.bonos) ? emp.bonos : [];
 
-/* SDI IMSS fijo por persona (solo informativo) */
-const SDI_IMSS = {
-  "jorge abraham": 292.54,
-  "blanca estela": 292.54,
-  "diego martín": 292.54,
-  "maria del rosario": 292.54,
-  "maría del rosario": 292.54,
-  "luis fernando eduardo": 839.44,
-  "emilio gonzález": 261.20,
-  "isabel emilio": 261.20,
-};
+  const suma = (pred) =>
+    bonos.filter(pred).reduce((acc, b) => acc + (+b.monto || 0), 0);
 
-/* ================== Componente principal ================== */
-export default function CalculoNomina() {
-  const [fecha, setFecha] = useState(new Date());
-  const [meta, setMeta] = useState(false);
-  const [activa, setActiva] = useState([]);
-  const [activaTS, setActivaTS] = useState(null);
-  const [registros, setRegistros] = useState({});
+  const bonoAsistencia = suma(isAsist);
+  const bonoLimpieza = suma(isLimp);
+  const bonoProductividad = suma(isProd);
 
+  return {
+    id: emp.id || crypto.randomUUID?.() || `emp-${Date.now()}-${Math.random()}`,
+    empresa: emp.empresa || "",
+    nombre: emp.nombre || "",
+    area: emp.area || "",
+    sueldoMensual: emp.sueldoMensual ?? "",
+    fechaIngreso: emp.fechaIngreso || "",
+    bonoAsistencia: bonoAsistencia || "",
+    bonoLimpieza: bonoLimpieza || "",
+    bonoProductividad: bonoProductividad || "",
+    infonavitCredito: emp.infonavitCredito ?? "",
+    altaIMSS: !!emp.altaIMSS,
+    sdi: emp.sdi ?? "",
+    limiteVales: emp.limiteVales ?? "",
+    dispersion: emp.dispersionBase ?? "",
+    primaVacacional: emp.primaVacacional ?? "",
+    aguinaldo: emp.aguinaldo ?? "",
+  };
+}
+
+/** Convierte la fila editable al formato que espera Cálculo de Nómina */
+function filaAEmpleado(fila) {
+  const bonos = [];
+
+  if (+fila.bonoAsistencia > 0) {
+    bonos.push({
+      id: "asistencia",
+      tipo: "percepcion",
+      nombre: "Puntualidad y asistencia",
+      monto: +fila.bonoAsistencia,
+    });
+  }
+  if (+fila.bonoLimpieza > 0) {
+    bonos.push({
+      id: "limpieza",
+      tipo: "percepcion",
+      nombre: "Bono de orden y limpieza",
+      monto: +fila.bonoLimpieza,
+    });
+  }
+  if (+fila.bonoProductividad > 0) {
+    bonos.push({
+      id: "productividad",
+      tipo: "percepcion",
+      nombre: "Bono de productividad",
+      monto: +fila.bonoProductividad,
+    });
+  }
+
+  return {
+    id: fila.id,
+    empresa: fila.empresa || "",
+    nombre: fila.nombre || "",
+    area: fila.area || "",
+    sueldoMensual: +fila.sueldoMensual || 0,
+    fechaIngreso: fila.fechaIngreso || "",
+    limiteVales: +fila.limiteVales || 0,
+    bonos,
+    infonavitCredito: +fila.infonavitCredito || 0,
+    altaIMSS: !!fila.altaIMSS,
+    sdi: +fila.sdi || 0,
+    dispersionBase: +fila.dispersion || 0,
+    primaVacacional: +fila.primaVacacional || 0,
+    aguinaldo: +fila.aguinaldo || 0,
+  };
+}
+
+export default function ParametrosNominaTab() {
+  const [filas, setFilas] = useState([]);
+  const [ts, setTs] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  // Cargar parámetros existentes
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY_ACTIVE);
       const data = raw ? JSON.parse(raw) : null;
-      setActiva(Array.isArray(data) ? data : []);
-      const ts = localStorage.getItem(LS_KEY_ACTIVE_TS);
-      setActivaTS(ts && !Number.isNaN(Date.parse(ts)) ? ts : null);
+      const lista = Array.isArray(data) ? data : [];
+      setFilas(lista.map(normalizarEmpleado));
+
+      const tsRaw = localStorage.getItem(LS_KEY_ACTIVE_TS);
+      setTs(tsRaw && !Number.isNaN(Date.parse(tsRaw)) ? tsRaw : null);
     } catch {
-      setActiva([]);
-      setActivaTS(null);
+      setFilas([]);
+      setTs(null);
     }
   }, []);
 
-  const pKey = periodKey(fecha);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`payroll-calculo-${pKey}`);
-      setRegistros(raw ? JSON.parse(raw) : {});
-    } catch {
-      setRegistros({});
-    }
-  }, [pKey]);
-  useEffect(() => {
-    localStorage.setItem(`payroll-calculo-${pKey}`, JSON.stringify(registros));
-  }, [pKey, registros]);
+  const empresasDisponibles = useMemo(() => {
+    const set = new Set();
+    filas.forEach((f) => f.empresa && set.add(f.empresa));
+    if (!set.size) set.add("Innovart Metal Design");
+    return Array.from(set);
+  }, [filas]);
 
-  const diasQ = daysInFortnight(fecha);
-  const semana = weekNumber(fecha);
-
-  const grupos = useMemo(() => {
-    const out = {};
-    for (const e of activa) (out[e.empresa] ||= []).push(e);
-    return out;
-  }, [activa]);
-
-  const setReg = (empId, patch) =>
-    setRegistros((prev) => ({
-      ...prev,
-      [empId]: { ...(prev[empId] || {}), ...patch },
-    }));
-
-  const bonosPorTipo = (emp) => {
-    const prod = (emp.bonos || [])
-      .filter((b) => b.tipo === "percepcion" && isProd(b))
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    const asist = (emp.bonos || [])
-      .filter((b) => b.tipo === "percepcion" && isAsist(b))
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    const limp = (emp.bonos || [])
-      .filter((b) => b.tipo === "percepcion" && isLimp(b))
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    const descFijos = (emp.bonos || [])
-      .filter((b) => b.tipo === "descuento")
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    return { prod, asist, limp, descFijos };
-  };
-
-  // Cálculo por empleado
-  function calcEmpleado(emp) {
-    const r = registros[emp.id] || {};
-    const faltas = +r.faltas || 0;
-    const retardos = +r.retardos || 0;
-    const horas = Math.max(0, Math.floor(+r.horasExtras || 0));
-    const incentivos = +r.otrosIncentivos || 0;
-    const otrosDesc = +r.otrosDescuentos || 0;
-    const limpiezaOK = !!r.limpiezaOK;
-    const sueldoFiscalBruto = +r.sueldoFiscalBruto || 0; // W (editable)
-    const dispersion = +r.dispersion || 0;               // X (editable)
-
-    // sin comentarios dentro de la destructuración
-    const { prod: _prodIgnorado, asist, descFijos } = bonosPorTipo(emp);
-
-    const sueldoDiario = (+emp.sueldoMensual || 0) / 30;
-
-    const nombreKey = (emp.nombre || "").toLowerCase();
-    const asistenciaBase =
-      emp.empresa === "Innovart Metal Design"
-        ? (ASISTENCIA_OVERRIDE[nombreKey] ?? 400)
-        : asist;
-    const asistenciaOK = faltas === 0 && retardos < 4;
-    const asistenciaAplicada = asistenciaOK ? asistenciaBase : 0;
-
-    const sueldoQuincenal = sueldoDiario * diasQ + asistenciaAplicada;
-
-    const descFaltas = faltas >= 4 ? sueldoDiario * 1 : 0;
-    const descRetardos = sueldoDiario * Math.floor(retardos / 4);
-    const pagoHoras = (sueldoDiario / 8) * horas;
-
-    const prodFixed = prodAmountFixed(emp);
-    const productividadOK = meta && emp.empresa === "Innovart Metal Design";
-    const prodAplicado = productividadOK ? prodFixed : 0;
-
-    // Limpieza: solo Blanca; monto fijo $250 con toggle
-    const esBlanca = nombreKey.includes("blanca");
-    const LIMPIEZA_BLANCA = 250;
-    const limpAplicado = esBlanca && limpiezaOK ? LIMPIEZA_BLANCA : 0;
-
-    const sumaPercepciones =
-      sueldoQuincenal +
-      pagoHoras +
-      limpAplicado +
-      prodAplicado +
-      incentivos -
-      otrosDesc -
-      descFijos;
-
-    const interna = sumaPercepciones - sueldoFiscalBruto;
-    const neto = dispersion + interna;
-
-    const sdi =
-      SDI_IMSS[Object.keys(SDI_IMSS).find((k) => nombreKey.includes(k)) || ""] || 0;
-
-    return {
-      sdi,
-      sueldoDiario,
-      sueldoQuincenal,
-      pagoHoras,
-      prodAplicado,
-      asistenciaBase,
-      asistenciaAplicada,
-      limpAplicado,
-      sumaPercepciones,
-      interna,
-      neto,
-      vales: +emp.limiteVales || 0,
-      descFaltas,
-      descRetardos,
-      descFijos,
-      otrosDesc,
-      incentivos,
-      sueldoFiscalBruto,
-      dispersion,
-    };
-  }
-
-  const TotalesEmpresa = (emps) => {
-    return emps.reduce(
-      (acc, e) => {
-        const x = calcEmpleado(e);
-        acc.base += x.sueldoQuincenal;
-        acc.horas += x.pagoHoras;
-        acc.bonos += x.prodAplicado + x.limpAplicado;
-        acc.percepciones += x.sumaPercepciones;
-        acc.interna += x.interna;
-        acc.neto += x.neto;
-        return acc;
-      },
-      { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
+  const handleChange = (id, field, value) => {
+    setFilas((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, [field]: value } : f))
     );
   };
 
+  const handleToggleAltaIMSS = (id) => {
+    setFilas((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, altaIMSS: !f.altaIMSS } : f))
+    );
+  };
+
+  const agregarFila = () => {
+    const nueva = {
+      id: crypto.randomUUID?.() || `emp-${Date.now()}-${Math.random()}`,
+      empresa: empresasDisponibles[0] || "Innovart Metal Design",
+      nombre: "",
+      area: "",
+      sueldoMensual: "",
+      fechaIngreso: "",
+      bonoAsistencia: "",
+      bonoLimpieza: "",
+      bonoProductividad: "",
+      infonavitCredito: "",
+      altaIMSS: true,
+      sdi: "",
+      limiteVales: "",
+      dispersion: "",
+      primaVacacional: "",
+      aguinaldo: "",
+    };
+    setFilas((prev) => [...prev, nueva]);
+  };
+
+  const eliminarFila = (id) => {
+    if (!window.confirm("¿Eliminar este trabajador de los parámetros?")) return;
+    setFilas((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const guardar = () => {
+    setGuardando(true);
+    try {
+      const empleados = filas.map(filaAEmpleado);
+      localStorage.setItem(LS_KEY_ACTIVE, JSON.stringify(empleados));
+      const tsNow = new Date().toISOString();
+      localStorage.setItem(LS_KEY_ACTIVE_TS, tsNow);
+      setTs(tsNow);
+      alert("Parámetros de nómina guardados correctamente.");
+    } catch (e) {
+      console.error(e);
+      alert("Ocurrió un error al guardar los parámetros.");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const inputBase =
+    "h-9 w-full rounded-2xl border border-gray-200 bg-white px-2 text-[13px] leading-tight focus-visible:ring-1 focus-visible:ring-black";
+
+  const inputNum =
+    inputBase +
+    " font-mono text-right tabular-nums";
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Encabezado */}
-      <div className="flex flex-col md:flex-row md:items-end gap-4">
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Cálculo de Nómina</h1>
-          <div className="text-sm text-gray-600">
-            Parámetros ACTIVO:{" "}
-            {activaTS ? new Date(activaTS).toLocaleString() : "sin actualizar"}.
-          </div>
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Parámetros de Nómina</h1>
+          <p className="text-sm text-gray-600">
+            Aquí defines los valores base por trabajador (bonos, SDI, vales,
+            etc.). Estos datos son los que usará la pantalla de{" "}
+            <span className="font-semibold">Cálculo de Nómina</span>.
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Última actualización:{" "}
+            {ts ? new Date(ts).toLocaleString() : "sin guardar aún"}.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Label>Fecha</Label>
-          <Input
-            type="date"
-            value={new Date(
-              fecha.getTime() - fecha.getTimezoneOffset() * 60000
-            )
-              .toISOString()
-              .slice(0, 10)}
-            onChange={(e) => setFecha(new Date(e.target.value))}
-          />
-          <div className="text-sm text-gray-700">
-            Semana #{semana} • Días quincena: {diasQ} •{" "}
-            {fecha.getDate() <= 15 ? "1ª quincena" : "2ª quincena"}
-          </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={agregarFila}>
+            + Agregar trabajador
+          </Button>
+          <Button onClick={guardar} disabled={guardando}>
+            {guardando ? "Guardando..." : "Guardar parámetros"}
+          </Button>
         </div>
       </div>
 
-      {/* Meta global */}
-      <div className="flex items-center gap-2 mb-2">
-        <label className="inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={meta}
-            onChange={(e) => setMeta(e.target.checked)}
-          />
-          Meta cumplida
-          <span className="text-gray-500"> (activa productividad solo Innovart)</span>
-        </label>
-      </div>
+      <Card className="shadow-sm">
+        <CardContent className="p-0">
+          {/* w-full para que ocupe todo el ancho del contenedor */}
+          <div className="w-full overflow-x-auto">
+            <table className="w-full text-[13px] border border-gray-200">
+              <colgroup>
+                <col style={{ width: "8rem" }} />   {/* Empresa */}
+                <col style={{ width: "14rem" }} />  {/* Nombre */}
+                <col style={{ width: "12rem" }} />  {/* Departamento */}
+                <col style={{ width: "9rem" }} />   {/* Sueldo mensual */}
+                <col style={{ width: "9rem" }} />   {/* Fecha ingreso */}
+                <col style={{ width: "8rem" }} />   {/* Bono asistencia */}
+                <col style={{ width: "8rem" }} />   {/* Bono limpieza */}
+                <col style={{ width: "8rem" }} />   {/* Bono productividad */}
+                <col style={{ width: "8rem" }} />   {/* Infonavit */}
+                <col style={{ width: "7rem" }} />   {/* Alta IMSS */}
+                <col style={{ width: "8.5rem" }} /> {/* SDI IMSS (más ancho) */}
+                <col style={{ width: "8.5rem" }} /> {/* Límite vales (más ancho) */}
+                <col style={{ width: "8rem" }} />   {/* Dispersión base */}
+                <col style={{ width: "8rem" }} />   {/* Prima vacacional */}
+                <col style={{ width: "8rem" }} />   {/* Aguinaldo */}
+                <col style={{ width: "5rem" }} />   {/* Acciones */}
+              </colgroup>
 
-      {/* Por empresa */}
-      {Object.entries(grupos).map(([empresa, emps]) => {
-        const tot = TotalesEmpresa(emps);
-        return (
-          <Card key={empresa} className="shadow-sm">
-            <CardContent className="p-4">
-              <h2 className="text-xl font-bold mb-3">{empresa}</h2>
+              <thead className="bg-gray-100/80 text-[11px] font-semibold uppercase tracking-wide text-gray-800">
+                <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:border-r [&>th]:border-gray-200 text-center">
+                  <th>EMPRESA</th>
+                  <th>NOMBRE DEL EMPLEADO</th>
+                  <th>DEPARTAMENTO</th>
+                  <th>SUELDO MENSUAL (30 días)</th>
+                  <th>FECHA DE INGRESO</th>
+                  <th>Bº PUNTUALIDAD Y ASISTENCIA</th>
+                  <th>BONO DE ORDEN Y LIMPIEZA</th>
+                  <th>BONO DE PRODUCTIVIDAD</th>
+                  <th>INFONAVIT CRÉDITO</th>
+                  <th>ALTA EN IMSS</th>
+                  <th>SDI IMSS</th>
+                  <th>LÍMITE VALES</th>
+                  <th>DISPERSIÓN BASE</th>
+                  <th>PRIMA VACACIONAL</th>
+                  <th>AGUINALDO</th>
+                  <th></th>
+                </tr>
+              </thead>
 
-              <div className="overflow-x-auto">
-                <table className="table-fixed w-full text-sm border">
-                  <colgroup>
-                    <col style={{ width: "22rem" }} />
-                    <col style={{ width: "12rem" }} />
-                    <col style={{ width: "6rem" }} />
-                    <col style={{ width: "6rem" }} />
-                    <col style={{ width: "6.5rem" }} />
-                    <col style={{ width: "7.5rem" }} />
-                    <col style={{ width: "7.5rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "7rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "9rem" }} />
-                    <col style={{ width: "8rem" }} />
-                    <col style={{ width: "9rem" }} />
-                    <col style={{ width: "10rem" }} />
-                  </colgroup>
+              <tbody className="[&>tr>td]:px-2 [&>tr>td]:py-1.5">
+                {filas.map((fila, idx) => {
+                  const bg = idx % 2 ? "bg-white" : "bg-gray-50/60";
+                  return (
+                    <tr key={fila.id} className={`${bg} border-b border-gray-200`}>
+                      {/* Empresa */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          value={fila.empresa}
+                          onChange={(e) =>
+                            handleChange(fila.id, "empresa", e.target.value)
+                          }
+                          className={inputBase + " text-xs"}
+                          placeholder="Empresa"
+                        />
+                      </td>
 
-                  <thead className="bg-gray-50 text-xs uppercase">
-                    <tr className="[&>th]:px-2.5 [&>th]:py-2 [&>th]:text-left [&>th]:border-b">
-                      <th className="sticky left-0 z-20 bg-gray-50">Nombre del empleado</th>
-                      <th>Área</th>
-                      <th>Faltas</th>
-                      <th>Retardos</th>
-                      <th>Horas extra</th>
-                      <th>Productividad</th>
-                      <th>Asistencia</th>
-                      <th>Limpieza</th>
-                      <th>Otros incentivos</th>
-                      <th>Otros descuentos</th>
-                      <th>Vales</th>
-                      <th>SDI (IMSS)</th>
-                      <th>Sueldo fiscal bruto</th>
-                      <th>Dispersión</th>
-                      <th>INTERNAL</th>
-                      <th>Sueldo neto quincenal</th>
+                      {/* Nombre */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          value={fila.nombre}
+                          onChange={(e) =>
+                            handleChange(fila.id, "nombre", e.target.value)
+                          }
+                          className={inputBase + " text-xs"}
+                          placeholder="Nombre completo"
+                        />
+                      </td>
+
+                      {/* Departamento / área */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          value={fila.area}
+                          onChange={(e) =>
+                            handleChange(fila.id, "area", e.target.value)
+                          }
+                          className={inputBase + " text-xs"}
+                          placeholder="Área / Puesto"
+                        />
+                      </td>
+
+                      {/* Sueldo mensual */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.sueldoMensual}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "sueldoMensual",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                        <div className="mt-0.5 text-[10px] text-gray-500">
+                          {fila.sueldoMensual
+                            ? currency(fila.sueldoMensual)
+                            : ""}
+                        </div>
+                      </td>
+
+                      {/* Fecha ingreso */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="date"
+                          className={inputBase + " text-xs"}
+                          value={fila.fechaIngreso || ""}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "fechaIngreso",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+
+                      {/* Bono asistencia */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.bonoAsistencia}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "bonoAsistencia",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Bono limpieza */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.bonoLimpieza}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "bonoLimpieza",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Bono productividad */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.bonoProductividad}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "bonoProductividad",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Infonavit crédito */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.infonavitCredito}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "infonavitCredito",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Alta en IMSS */}
+                      <td className="border-r border-gray-200 align-top text-center">
+                        <Label className="inline-flex items-center justify-center gap-1 text-[11px]">
+                          <input
+                            type="checkbox"
+                            checked={fila.altaIMSS}
+                            onChange={() => handleToggleAltaIMSS(fila.id)}
+                          />
+                          <span>{fila.altaIMSS ? "Sí" : "No"}</span>
+                        </Label>
+                      </td>
+
+                      {/* SDI IMSS */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.sdi}
+                          onChange={(e) =>
+                            handleChange(fila.id, "sdi", e.target.value)
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Límite vales */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.limiteVales}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "limiteVales",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Dispersión base */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.dispersion}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "dispersion",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Prima vacacional */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.primaVacacional}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "primaVacacional",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Aguinaldo */}
+                      <td className="border-r border-gray-200 align-top">
+                        <Input
+                          type="number"
+                          className={inputNum}
+                          value={fila.aguinaldo}
+                          onChange={(e) =>
+                            handleChange(
+                              fila.id,
+                              "aguinaldo",
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Acciones */}
+                      <td className="align-top text-center">
+                        <button
+                          type="button"
+                          className="text-[11px] text-red-600 hover:underline"
+                          onClick={() => eliminarFila(fila.id)}
+                        >
+                          Eliminar
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
+                  );
+                })}
 
-                  <tbody className="[&>tr>td]:px-2.5 [&>tr>td]:py-2">
-                    {emps.map((emp, idx) => {
-                      const r = registros[emp.id] || {};
-                      const x = calcEmpleado(emp);
-
-                      const esBlanca = (emp.nombre || "").toLowerCase().includes("blanca");
-                      const LIMPIEZA_BLANCA = 250;
-
-                      const num = "text-right font-mono whitespace-nowrap";
-                      const numTab = { fontVariantNumeric: "tabular-nums" };
-                      const stickyBg = idx % 2 ? "bg-gray-50/60" : "bg-white";
-
-                      const prodMostrar = prodAmountFixed(emp);
-                      const asistMostrar = x.asistenciaBase;
-
-                      return (
-                        <tr key={emp.id} className="odd:bg-white even:bg-gray-50/60 border-b">
-                          <td className={`sticky left-0 z-10 ${stickyBg}`}>
-                            <div className="font-medium leading-tight truncate">{emp.nombre}</div>
-                            <div className="text-[11px] text-gray-500">{currency(emp.sueldoMensual)} / mes</div>
-                          </td>
-
-                          <td className="truncate">{emp.area}</td>
-
-                          <td>
-                            <Input
-                              aria-label="Faltas"
-                              type="number"
-                              placeholder="0"
-                              className="h-9 text-right"
-                              value={r.faltas || ""}
-                              onChange={(e) => setReg(emp.id, { faltas: parseInt(e.target.value || "0") })}
-                            />
-                            <div className="text-[10px] text-gray-400">1–3 ok; 4+ = 1 día</div>
-                          </td>
-
-                          <td>
-                            <Input
-                              aria-label="Retardos"
-                              type="number"
-                              placeholder="0"
-                              className="h-9 text-right"
-                              value={r.retardos || ""}
-                              onChange={(e) => setReg(emp.id, { retardos: parseInt(e.target.value || "0") })}
-                            />
-                            <div className="text-[10px] text-gray-400">1 día / 4</div>
-                          </td>
-
-                          <td>
-                            <Input
-                              aria-label="Horas extra"
-                              type="number"
-                              placeholder="0"
-                              className="h-9 text-right"
-                              value={r.horasExtras || ""}
-                              onChange={(e) => setReg(emp.id, { horasExtras: parseInt(e.target.value || "0") })}
-                            />
-                            <div className="text-[10px] text-gray-400">solo enteras</div>
-                          </td>
-
-                          <td className={`${num}`} style={numTab}>
-                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${x.prodAplicado ? "bg-black text-white" : "bg-gray-200 text-gray-700"}`}>
-                              {currency(prodMostrar)}
-                            </span>
-                          </td>
-
-                          <td className={`${num}`} style={numTab}>
-                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${x.asistenciaAplicada ? "bg-black text-white" : "bg-gray-200 text-gray-700"}`}>
-                              {currency(asistMostrar)}
-                            </span>
-                          </td>
-
-                          <td className="text-center">
-                            {esBlanca ? (
-                              <label className="inline-flex items-center gap-2 text-xs">
-                                <input
-                                  type="checkbox"
-                                  checked={!!r.limpiezaOK}
-                                  onChange={(e) => setReg(emp.id, { limpiezaOK: e.target.checked })}
-                                />
-                                <span className="font-mono" style={numTab}>{currency(LIMPIEZA_BLANCA)}</span>
-                              </label>
-                            ) : (
-                              <span className="text-[11px] text-gray-400">—</span>
-                            )}
-                          </td>
-
-                          <td>
-                            <Input
-                              aria-label="Otros incentivos"
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="h-9 text-right"
-                              value={r.otrosIncentivos || ""}
-                              onChange={(e) => setReg(emp.id, { otrosIncentivos: parseFloat(e.target.value || "0") })}
-                            />
-                          </td>
-
-                          <td>
-                            <Input
-                              aria-label="Otros descuentos"
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="h-9 text-right"
-                              value={r.otrosDescuentos || ""}
-                              onChange={(e) => setReg(emp.id, { otrosDescuentos: parseFloat(e.target.value || "0") })}
-                            />
-                          </td>
-
-                          <td className={`${num}`} style={numTab}>
-                            {currency(x.vales)}
-                          </td>
-
-                          <td className={`${num}`} style={numTab}>
-                            {x.sdi ? currency(x.sdi) : "—"}
-                          </td>
-
-                          <td>
-                            <Input
-                              aria-label="Sueldo fiscal bruto"
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="h-9 text-right"
-                              value={r.sueldoFiscalBruto || ""}
-                              onChange={(e) => setReg(emp.id, { sueldoFiscalBruto: parseFloat(e.target.value || "0") })}
-                            />
-                          </td>
-
-                          <td>
-                            <Input
-                              aria-label="Dispersión"
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="h-9 text-right"
-                              value={r.dispersion || ""}
-                              onChange={(e) => setReg(emp.id, { dispersion: parseFloat(e.target.value || "0") })}
-                            />
-                          </td>
-
-                          <td className={`${num} font-medium`} style={numTab}>
-                            {currency(x.interna)}
-                          </td>
-
-                          <td className={`${num} font-semibold`} style={numTab}>
-                            {currency(x.neto)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-
-                  <tfoot>
-                    <tr className="bg-gray-100 font-semibold">
-                      <td className="px-2.5 py-2 sticky left-0 z-10 bg-gray-100">
-                        Totales de {empresa}
-                      </td>
-                      <td className="px-2.5 py-2" colSpan={3}></td>
-                      <td className="px-2.5 py-2">
-                        Hrs extra: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.horas)}</span>
-                      </td>
-                      <td className="px-2.5 py-2" colSpan={2}>
-                        Bonos: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.bonos)}</span>
-                      </td>
-                      <td className="px-2.5 py-2" colSpan={3}></td>
-                      <td className="px-2.5 py-2" colSpan={1}></td>
-                      <td className="px-2.5 py-2" colSpan={1}></td>
-                      <td className="px-2.5 py-2">
-                        INTERNAL: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.interna)}</span>
-                      </td>
-                      <td className="px-2.5 py-2">
-                        NETO: <span className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{currency(tot.neto)}</span>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-
-      <Card className="bg-gray-50">
-        <CardContent className="p-4">
-          <h2 className="text-xl font-bold mb-2">Resumen General</h2>
-          {(() => {
-            const todos = Object.values(grupos).flat();
-            const t = todos.reduce(
-              (acc, emp) => {
-                const x = calcEmpleado(emp);
-                acc.base += x.sueldoQuincenal;
-                acc.horas += x.pagoHoras;
-                acc.bonos += x.prodAplicado + x.limpAplicado;
-                acc.percepciones += x.sumaPercepciones;
-                acc.interna += x.interna;
-                acc.neto += x.neto;
-                return acc;
-              },
-              { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
-            );
-            return (
-              <div className="grid grid-cols-6 gap-3 text-sm">
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Sueldo quincenal (L)</div>
-                  <div className="text-lg font-bold">{currency(t.base)}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Bonos (prod + limp)</div>
-                  <div className="text-lg font-bold">{currency(t.bonos)}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Horas extra</div>
-                  <div className="text-lg font-bold">{currency(t.horas)}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Percepciones (U)</div>
-                  <div className="text-lg font-bold">{currency(t.percepciones)}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">INTERNAL (Y)</div>
-                  <div className="text-lg font-bold">{currency(t.interna)}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white border">
-                  <div className="text-[11px] text-gray-600">Sueldo neto quincenal</div>
-                  <div className="text-lg font-bold">{currency(t.neto)}</div>
-                </div>
-              </div>
-            );
-          })()}
+                {filas.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={16}
+                      className="py-6 text-center text-sm text-gray-500"
+                    >
+                      No hay trabajadores configurados.{" "}
+                      <button
+                        className="text-blue-600 underline"
+                        type="button"
+                        onClick={agregarFila}
+                      >
+                        Agregar el primero
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </div>
