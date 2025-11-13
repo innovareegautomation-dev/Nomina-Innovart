@@ -141,17 +141,6 @@ export default function CalculoNomina() {
     const otrosDesc = +r.otrosDescuentos || 0;
     const limpiezaOK = !!r.limpiezaOK;
 
-    // Si hubiera sueldoFiscalBruto / dispersion guardados, se respetan,
-    // de lo contrario se toma la dispersión de parámetros (dispersionBase)
-    const sueldoFiscalBruto =
-      r.sueldoFiscalBruto != null
-        ? +r.sueldoFiscalBruto
-        : +emp.sueldoFiscalBruto || 0;
-    const dispersion =
-      r.dispersion != null
-        ? +r.dispersion
-        : +emp.dispersionBase || 0;
-
     const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
 
     const sueldoMensual = +emp.sueldoMensual || 0;
@@ -159,7 +148,7 @@ export default function CalculoNomina() {
 
     const nombreKey = (emp.nombre || "").toLowerCase();
 
-    // Bono base de asistencia: si es Innovart, 400 por defecto o override; si no, el configurado
+    // Bono base de asistencia: si es Innovart, 400 por defecto u override; si no, el configurado
     const asistenciaBase =
       emp.empresa === "Innovart Metal Design"
         ? ASISTENCIA_OVERRIDE[nombreKey] ?? (asist || 400)
@@ -174,7 +163,7 @@ export default function CalculoNomina() {
     const descRetardos = sueldoDiario * Math.floor(retardos / 4);
     const pagoHoras = (sueldoDiario / 8) * horas;
 
-    // Productividad: depende SOLO de la meta y de que sea Innovart (ya no de la asistencia)
+    // PRODUCTIVIDAD: solo depende de la meta y de que sea Innovart (NO de asistencia)
     const prodBase = prod;
     const productividadOK = meta;
     const prodAplicado =
@@ -182,22 +171,37 @@ export default function CalculoNomina() {
         ? prodBase
         : 0;
 
-    // Limpieza: solo si tiene monto configurado + asistencia OK + checkbox marcado
+    // LIMPIEZA: solo si tiene monto + asistencia OK + checkbox marcado
     const limpAplicado =
       limp > 0 && limpiezaOK && asistenciaOK ? limp : 0;
 
+    // PRIMA VACACIONAL y AGUINALDO desde parámetros
+    const primaVac = +emp.primaVacacional || 0;
+    const aguinaldo = +emp.aguinaldo || 0;
+
+    // Por ahora no capturamos descansos laborados, lo dejamos en 0
+    const descansosLab = 0;
+
+    // SUMA DE PERCEPCIONES, igual a tu Excel
     const sumaPercepciones =
       sueldoPeriodo +
+      primaVac +
+      aguinaldo +
       pagoHoras +
+      descansosLab +
       limpAplicado +
       prodAplicado +
       incentivos -
       otrosDesc -
       descFijos;
 
-    // Si no hay sueldoFiscalBruto, interna = sumaPercepciones
-    const interna = sumaPercepciones - (sueldoFiscalBruto || 0);
-    const neto = dispersion + interna;
+    // Sueldo fiscal bruto y dispersión base desde parámetros (si no existen, 0)
+    const sueldoFiscalBruto = +emp.sueldoFiscalBruto || 0;
+    const dispersionBase = +emp.dispersionBase || 0;
+
+    // INTERNAL y NETO
+    const interna = sumaPercepciones - sueldoFiscalBruto;
+    const neto = interna + dispersionBase;
 
     const sdi = +emp.sdi || 0;
 
@@ -220,7 +224,7 @@ export default function CalculoNomina() {
       otrosDesc,
       incentivos,
       sueldoFiscalBruto,
-      dispersion,
+      dispersionBase,
     };
   }
 
@@ -350,6 +354,7 @@ export default function CalculoNomina() {
                     <col style={{ width: "8rem" }} />  {/* Otros descuentos */}
                     <col style={{ width: "7rem" }} />  {/* Vales */}
                     <col style={{ width: "8rem" }} />  {/* SDI */}
+                    <col style={{ width: "9rem" }} />  {/* Suma percepciones */}
                     <col style={{ width: "9rem" }} />  {/* Interna */}
                     <col style={{ width: "10rem" }} /> {/* Neto */}
                   </colgroup>
@@ -369,6 +374,7 @@ export default function CalculoNomina() {
                       <th>Otros descuentos</th>
                       <th>Vales</th>
                       <th>SDI (IMSS)</th>
+                      <th>Suma de percepciones</th>
                       <th>INTERNAL</th>
                       <th>Sueldo neto {periodoLabel}</th>
                     </tr>
@@ -569,9 +575,14 @@ export default function CalculoNomina() {
                             {currency(x.vales)}
                           </td>
 
-                          {/* SDI IMSS (desde parámetros) */}
+                          {/* SDI IMSS */}
                           <td className={num} style={numTab}>
                             {x.sdi ? currency(x.sdi) : "—"}
+                          </td>
+
+                          {/* Suma de percepciones */}
+                          <td className={num} style={numTab}>
+                            {currency(x.sumaPercepciones)}
                           </td>
 
                           {/* Interna */}
@@ -609,6 +620,16 @@ export default function CalculoNomina() {
                       <td className="px-2.5 py-2" colSpan={3}></td>
                       {/* SDI vacío */}
                       <td className="px-2.5 py-2"></td>
+                      {/* Suma percepciones */}
+                      <td className="px-2.5 py-2">
+                        Percepciones:{" "}
+                        <span
+                          className="font-mono"
+                          style={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {currency(tot.percepciones)}
+                        </span>
+                      </td>
                       {/* Interna y neto */}
                       <td className="px-2.5 py-2">
                         INTERNAL:{" "}
