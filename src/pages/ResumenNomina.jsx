@@ -7,7 +7,7 @@ const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_CAPTURE_INFO = "payroll-captura-info";
 const LS_META_KEY = "payroll-meta-cumplida";
 
-/* ================== Utilidades de fecha ================== */
+/* =============== Utilidades de fecha ================== */
 function startOfFortnight(d) {
   const dt = new Date(d);
   const y = dt.getFullYear();
@@ -35,10 +35,124 @@ const currency = (n) =>
     maximumFractionDigits: 2,
   }).format(Number.isFinite(n) ? n : 0);
 
-/* ================== Helpers para bonos ================== */
+/* =============== Helpers de bonos (igual que en Cálculo) =============== */
 const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
 const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
 const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
+
+function bonosPorTipo(emp) {
+  const bonos = Array.isArray(emp.bonos) ? emp.bonos : [];
+  const prod = bonos
+    .filter((b) => b.tipo === "percepcion" && isProd(b))
+    .reduce((a, b) => a + (+b.monto || 0), 0);
+  const asist = bonos
+    .filter((b) => b.tipo === "percepcion" && isAsist(b))
+    .reduce((a, b) => a + (+b.monto || 0), 0);
+  const limp = bonos
+    .filter((b) => b.tipo === "percepcion" && isLimp(b))
+    .reduce((a, b) => a + (+b.monto || 0), 0);
+  const descFijos = bonos
+    .filter((b) => b.tipo === "descuento")
+    .reduce((a, b) => a + (+b.monto || 0), 0);
+  return { prod, asist, limp, descFijos };
+}
+
+/* =============== Cálculo por empleado (función pura) =============== */
+function calcEmpleado(emp, registros, diasPeriodo, meta) {
+  const r = registros[emp.id] || {};
+  const faltas = +r.faltas || 0;
+  const retardos = +r.retardos || 0;
+  const horas = Math.max(0, Math.floor(+r.horasExtras || 0));
+  const incentivos = +r.otrosIncentivos || 0;
+  const otrosDesc = +r.otrosDescuentos || 0;
+  const limpiezaOK = !!r.limpiezaOK;
+
+  const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
+
+  const sueldoMensual = +emp.sueldoMensual || 0;
+  const sueldoDiario = sueldoMensual / 30;
+
+  const asistenciaBase = asist;
+  const asistenciaOK = faltas === 0 && retardos < 4;
+  const asistenciaAplicada = asistenciaOK ? asistenciaBase : 0;
+
+  const sueldoBasePeriodo = sueldoDiario * diasPeriodo;
+  const sueldoPeriodo = sueldoBasePeriodo + asistenciaAplicada;
+
+  const pagoHoras = (sueldoDiario / 8) * horas;
+
+  const prodBase = prod;
+  const productividadOK = meta && emp.empresa === "Innovart Metal Design";
+  const prodAplicado = productividadOK ? prodBase : 0;
+
+  const limpAplicado = limpiezaOK ? limp : 0;
+
+  const primaVacacional = +emp.primaVacacional || 0;
+  const aguinaldo = +emp.aguinaldo || 0;
+
+  const sumaPercepciones =
+    sueldoPeriodo +
+    pagoHoras +
+    primaVacacional +
+    aguinaldo +
+    limpAplicado +
+    prodAplicado +
+    incentivos -
+    otrosDesc -
+    descFijos;
+
+  const dispersion = +emp.dispersionBase || 0;
+  const sueldoFiscalBruto =
+    emp.sueldoFiscalBruto != null
+      ? +emp.sueldoFiscalBruto || 0
+      : dispersion;
+
+  const interna = sumaPercepciones - sueldoFiscalBruto;
+  const neto = dispersion + interna;
+
+  const sdi = +emp.sdi || 0;
+  const vales = +emp.limiteVales || 0;
+
+  return {
+    faltas,
+    retardos,
+    horas,
+    incentivos,
+    otrosDesc,
+    limpiezaOK,
+    sdi,
+    sueldoDiario,
+    sueldoPeriodo,
+    pagoHoras,
+    prodAplicado,
+    prodBase,
+    asistenciaBase,
+    asistenciaAplicada,
+    limp,
+    limpAplicado,
+    sumaPercepciones,
+    interna,
+    neto,
+    vales,
+    descFijos,
+  };
+}
+
+function totalesEmpresa(emps, registros, diasPeriodo, meta) {
+  return emps.reduce(
+    (acc, emp) => {
+      const x = calcEmpleado(emp, registros, diasPeriodo, meta);
+      acc.base += x.sueldoPeriodo;
+      acc.horas += x.pagoHoras;
+      acc.bonos += x.prodAplicado + x.limpAplicado;
+      acc.percepciones += x.sumaPercepciones;
+      acc.interna += x.interna;
+      acc.neto += x.neto;
+      return acc;
+    },
+    { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
+  );
+}
 
 /* ========================================================
    Componente principal
@@ -49,20 +163,17 @@ export default function ResumenNomina() {
   const [registros, setRegistros] = useState({});
   const [meta, setMeta] = useState(false);
 
-  /* -------- Cargar info de captura -------- */
+  /* --- Cargar info de captura --- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_CAPTURE_INFO);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setInfoCaptura(parsed);
-      }
+      if (raw) setInfoCaptura(JSON.parse(raw));
     } catch {
       setInfoCaptura(null);
     }
   }, []);
 
-  /* -------- Cargar estado de "Meta cumplida" -------- */
+  /* --- Cargar estado de meta cumplida --- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_META_KEY);
@@ -72,7 +183,7 @@ export default function ResumenNomina() {
     }
   }, []);
 
-  /* -------- Cargar parámetros activos (empleados) -------- */
+  /* --- Cargar parámetros activos --- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY_ACTIVE);
@@ -83,20 +194,18 @@ export default function ResumenNomina() {
     }
   }, []);
 
-  /* -------- Cargar registros del periodo capturado -------- */
+  /* --- Cargar registros del periodo capturado --- */
   useEffect(() => {
-    if (!infoCaptura) return;
-    const { pKey } = infoCaptura;
-    if (!pKey) return;
-
+    if (!infoCaptura || !infoCaptura.pKey) return;
     try {
-      const raw = localStorage.getItem(`payroll-calculo-${pKey}`);
+      const raw = localStorage.getItem(`payroll-calculo-${infoCaptura.pKey}`);
       setRegistros(raw ? JSON.parse(raw) : {});
     } catch {
       setRegistros({});
     }
   }, [infoCaptura]);
 
+  /* --- Si no hay captura, mensaje simple --- */
   if (!infoCaptura) {
     return (
       <div className="p-6 space-y-4">
@@ -113,179 +222,60 @@ export default function ResumenNomina() {
     );
   }
 
-  /* -------- Datos básicos del periodo -------- */
   const { fecha, periodo, pKey } = infoCaptura;
 
   const fechaObj = new Date(fecha);
-  const fechaLabel = (() => {
-    try {
-      return fechaObj.toLocaleDateString("es-MX", {
-        year: "numeric",
-        month: "long",
-        day: "2-digit",
-      });
-    } catch {
-      return fecha;
-    }
-  })();
+  const fechaLabel = fechaObj.toLocaleDateString("es-MX", {
+    year: "numeric",
+    month: "long",
+    day: "2-digit",
+  });
 
   const diasPeriodo =
     periodo === "semanal" ? 7 : daysInFortnight(fechaObj);
-
   const periodoLabel =
     periodo === "semanal" ? "Periodo semanal" : "Periodo quincenal";
+  const periodoTexto =
+    periodo === "semanal" ? "semanal" : "quincenal";
 
-  /* -------- Agrupar empleados por empresa -------- */
+  /* --- Agrupar empleados por empresa --- */
   const grupos = useMemo(() => {
     const out = {};
-    for (const e of activa) (out[e.empresa] ||= []).push(e);
+    for (const e of activa) {
+      if (!out[e.empresa]) out[e.empresa] = [];
+      out[e.empresa].push(e);
+    }
     return out;
   }, [activa]);
 
-  /* -------- Bonos por tipo -------- */
-  const bonosPorTipo = (emp) => {
-    const bonos = Array.isArray(emp.bonos) ? emp.bonos : [];
-    const prod = bonos
-      .filter((b) => b.tipo === "percepcion" && isProd(b))
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    const asist = bonos
-      .filter((b) => b.tipo === "percepcion" && isAsist(b))
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    const limp = bonos
-      .filter((b) => b.tipo === "percepcion" && isLimp(b))
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    const descFijos = bonos
-      .filter((b) => b.tipo === "descuento")
-      .reduce((a, b) => a + (+b.monto || 0), 0);
-    return { prod, asist, limp, descFijos };
-  };
-
-  /* -------- Cálculo por empleado (igual que en Cálculo) -------- */
-  function calcEmpleado(emp) {
-    const r = registros[emp.id] || {};
-    const faltas = +r.faltas || 0;
-    const retardos = +r.retardos || 0;
-    const horas = Math.max(0, Math.floor(+r.horasExtras || 0));
-    const incentivos = +r.otrosIncentivos || 0;
-    const otrosDesc = +r.otrosDescuentos || 0;
-    const limpiezaOK = !!r.limpiezaOK;
-
-    const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
-
-    const sueldoMensual = +emp.sueldoMensual || 0;
-    const sueldoDiario = sueldoMensual / 30;
-
-    const asistenciaBase = asist;
-    const asistenciaOK = faltas === 0 && retardos < 4;
-    const asistenciaAplicada = asistenciaOK ? asistenciaBase : 0;
-
-    const sueldoBasePeriodo = sueldoDiario * diasPeriodo;
-    const sueldoPeriodo = sueldoBasePeriodo + asistenciaAplicada;
-
-    const pagoHoras = (sueldoDiario / 8) * horas;
-
-    const prodBase = prod;
-    const productividadOK = meta && emp.empresa === "Innovart Metal Design";
-    const prodAplicado = productividadOK ? prodBase : 0;
-
-    const limpAplicado = limpiezaOK ? limp : 0;
-
-    const primaVacacional = +emp.primaVacacional || 0;
-    const aguinaldo = +emp.aguinaldo || 0;
-
-    const sumaPercepciones =
-      sueldoPeriodo +
-      pagoHoras +
-      primaVacacional +
-      aguinaldo +
-      limpAplicado +
-      prodAplicado +
-      incentivos -
-      otrosDesc -
-      descFijos;
-
-    const dispersion = +emp.dispersionBase || 0;
-
-    const sueldoFiscalBruto =
-      emp.sueldoFiscalBruto != null
-        ? +emp.sueldoFiscalBruto || 0
-        : dispersion;
-
-    const interna = sumaPercepciones - sueldoFiscalBruto;
-    const neto = dispersion + interna;
-
-    const sdi = +emp.sdi || 0;
-    const vales = +emp.limiteVales || 0;
-
-    return {
-      faltas,
-      retardos,
-      horas,
-      incentivos,
-      otrosDesc,
-      limpiezaOK,
-      sdi,
-      sueldoDiario,
-      sueldoPeriodo,
-      pagoHoras,
-      prodAplicado,
-      prodBase,
-      asistenciaBase,
-      asistenciaAplicada,
-      limp,
-      limpAplicado,
-      sumaPercepciones,
-      interna,
-      neto,
-      vales,
-      descFijos,
+  /* --- Totales generales --- */
+  const totalesGenerales = useMemo(() => {
+    const t = {
+      base: 0,
+      horas: 0,
+      bonos: 0,
+      percepciones: 0,
+      interna: 0,
+      neto: 0,
     };
-  }
+    Object.values(grupos).forEach((emps) => {
+      emps.forEach((emp) => {
+        const x = calcEmpleado(emp, registros, diasPeriodo, meta);
+        t.base += x.sueldoPeriodo;
+        t.horas += x.pagoHoras;
+        t.bonos += x.prodAplicado + x.limpAplicado;
+        t.percepciones += x.sumaPercepciones;
+        t.interna += x.interna;
+        t.neto += x.neto;
+      });
+    });
+    return t;
+  }, [grupos, registros, diasPeriodo, meta]);
 
-  /* -------- Totales por empresa y generales -------- */
-  const TotalesEmpresa = (emps) =>
-    emps.reduce(
-      (acc, e) => {
-        const x = calcEmpleado(e);
-        acc.base += x.sueldoPeriodo;
-        acc.horas += x.pagoHoras;
-        acc.bonos += x.prodAplicado + x.limpAplicado;
-        acc.percepciones += x.sumaPercepciones;
-        acc.interna += x.interna;
-        acc.neto += x.neto;
-        return acc;
-      },
-      { base: 0, horas: 0, bonos: 0, percepciones: 0, interna: 0, neto: 0 }
-    );
-
-  const totalesGenerales = (() => {
-    const todos = Object.values(grupos).flat();
-    return todos.reduce(
-      (acc, emp) => {
-        const x = calcEmpleado(emp);
-        acc.base += x.sueldoPeriodo;
-        acc.horas += x.pagoHoras;
-        acc.bonos += x.prodAplicado + x.limpAplicado;
-        acc.percepciones += x.sumaPercepciones;
-        acc.interna += x.interna;
-        acc.neto += x.neto;
-        return acc;
-      },
-      {
-        base: 0,
-        horas: 0,
-        bonos: 0,
-        percepciones: 0,
-        interna: 0,
-        neto: 0,
-      }
-    );
-  })();
-
-  /* ================== Exportar a Excel (CSV) ================== */
+  /* ========= Exportar a Excel (CSV sencillo) ========= */
   const handleExportExcel = () => {
     const filas = [];
-    // Encabezados
+
     filas.push([
       "Empresa",
       "Nombre",
@@ -312,9 +302,7 @@ export default function ResumenNomina() {
 
     Object.entries(grupos).forEach(([empresa, emps]) => {
       emps.forEach((emp) => {
-        const r = registros[emp.id] || {};
-        const x = calcEmpleado(emp);
-
+        const x = calcEmpleado(emp, registros, diasPeriodo, meta);
         filas.push([
           empresa,
           emp.nombre,
@@ -340,8 +328,7 @@ export default function ResumenNomina() {
         ]);
       });
 
-      // Fila de totales por empresa
-      const t = TotalesEmpresa(emps);
+      const t = totalesEmpresa(emps, registros, diasPeriodo, meta);
       filas.push([
         `${empresa} (Totales)`,
         "",
@@ -379,9 +366,7 @@ export default function ResumenNomina() {
       )
       .join("\r\n");
 
-    const blob = new Blob([csv], {
-      type: "text/csv;charset=utf-8;",
-    });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -392,22 +377,14 @@ export default function ResumenNomina() {
     URL.revokeObjectURL(url);
   };
 
-  /* ================== Exportar a PDF ================== */
+  /* ========= Exportar a PDF ========= */
   const handleExportPDF = () => {
-    // Usamos la función de impresión del navegador;
-    // el usuario puede elegir "Guardar como PDF".
-    window.print();
+    window.print(); // luego podemos refinar estilos de impresión
   };
-
-  const periodoTexto =
-    periodo === "semanal" ? "semanal" : "quincenal";
-
-  const periodLabel =
-    periodo === "semanal" ? "semanal" : "quincenal";
 
   return (
     <div className="p-6 space-y-6">
-      {/* Encabezado del resumen */}
+      {/* Encabezado */}
       <div className="flex flex-col md:flex-row md:items-end gap-4">
         <div className="flex-1">
           <h2 className="text-2xl font-bold">Resultados de nómina</h2>
@@ -428,9 +405,11 @@ export default function ResumenNomina() {
         </div>
       </div>
 
-      {/* Tablas por empresa (solo lectura) */}
+      {/* Tablas por empresa */}
       {Object.entries(grupos).map(([empresa, emps]) => {
-        const tot = TotalesEmpresa(emps);
+        const tot = totalesEmpresa(emps, registros, diasPeriodo, meta);
+        const periodLabel = periodoTexto; // "semanal" | "quincenal"
+
         return (
           <Card key={empresa} className="shadow-sm">
             <CardContent className="p-4">
@@ -438,20 +417,20 @@ export default function ResumenNomina() {
               <div className="overflow-x-auto">
                 <table className="table-fixed w-full text-sm border">
                   <colgroup>
-                    <col style={{ width: "22rem" }} /> {/* Nombre */}
-                    <col style={{ width: "5rem" }} /> {/* Faltas */}
-                    <col style={{ width: "6rem" }} /> {/* Retardos */}
-                    <col style={{ width: "7rem" }} /> {/* Horas extra */}
-                    <col style={{ width: "7.5rem" }} /> {/* Productividad */}
-                    <col style={{ width: "7.5rem" }} /> {/* Asistencia */}
-                    <col style={{ width: "7.5rem" }} /> {/* Limpieza */}
-                    <col style={{ width: "8rem" }} /> {/* Otros incentivos */}
-                    <col style={{ width: "8rem" }} /> {/* Otros descuentos */}
-                    <col style={{ width: "7rem" }} /> {/* Vales */}
-                    <col style={{ width: "8rem" }} /> {/* SDI */}
-                    <col style={{ width: "9rem" }} /> {/* Suma percepciones */}
-                    <col style={{ width: "9rem" }} /> {/* Interna */}
-                    <col style={{ width: "10rem" }} /> {/* Neto */}
+                    <col style={{ width: "22rem" }} />
+                    <col style={{ width: "5rem" }} />
+                    <col style={{ width: "6rem" }} />
+                    <col style={{ width: "7rem" }} />
+                    <col style={{ width: "7.5rem" }} />
+                    <col style={{ width: "7.5rem" }} />
+                    <col style={{ width: "7.5rem" }} />
+                    <col style={{ width: "8rem" }} />
+                    <col style={{ width: "8rem" }} />
+                    <col style={{ width: "7rem" }} />
+                    <col style={{ width: "8rem" }} />
+                    <col style={{ width: "9rem" }} />
+                    <col style={{ width: "9rem" }} />
+                    <col style={{ width: "10rem" }} />
                   </colgroup>
 
                   <thead className="bg-gray-50 text-xs uppercase">
@@ -477,8 +456,14 @@ export default function ResumenNomina() {
 
                   <tbody className="[&>tr>td]:px-2.5 [&>tr>td]:py-2">
                     {emps.map((emp) => {
-                      const x = calcEmpleado(emp);
-                      const num = "text-right font-mono whitespace-nowrap";
+                      const x = calcEmpleado(
+                        emp,
+                        registros,
+                        diasPeriodo,
+                        meta
+                      );
+                      const num =
+                        "text-right font-mono whitespace-nowrap";
                       const numTab = {
                         fontVariantNumeric: "tabular-nums",
                       };
@@ -526,20 +511,19 @@ export default function ResumenNomina() {
                           <td className={num} style={numTab}>
                             {currency(x.vales)}
                           </td>
-
                           <td className={num} style={numTab}>
                             {x.sdi ? currency(x.sdi) : "—"}
                           </td>
-
                           <td className={num} style={numTab}>
                             {currency(x.sumaPercepciones)}
                           </td>
-
-                          <td className={`${num}`} style={numTab}>
+                          <td className={num} style={numTab}>
                             {currency(x.interna)}
                           </td>
-
-                          <td className={`${num} font-semibold`} style={numTab}>
+                          <td
+                            className={`${num} font-semibold`}
+                            style={numTab}
+                          >
                             {currency(x.neto)}
                           </td>
                         </tr>
