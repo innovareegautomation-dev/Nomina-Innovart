@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
+const LS_META_KEY = "payroll-meta-cumplida"; // <-- NUEVO
 
 /* ================== Utilidades de fecha ================== */
 function startOfFortnight(d) {
@@ -81,6 +82,25 @@ export default function CalculoNomina() {
       setActivaTS(null);
     }
   }, []);
+
+  /* -------- Cargar estado inicial de "Meta cumplida" -------- */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_META_KEY);
+      setMeta(raw === "1");
+    } catch {
+      // si falla, dejamos meta en false
+    }
+  }, []);
+
+  /* -------- Guardar "Meta cumplida" cuando cambie -------- */
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_META_KEY, meta ? "1" : "0");
+    } catch {
+      // ignorar
+    }
+  }, [meta]);
 
   const pKey = periodKey(fecha);
 
