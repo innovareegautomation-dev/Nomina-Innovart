@@ -171,7 +171,7 @@ export default function CalculoNomina({ onCapturar = () => {} }) {
   /* -------- Cálculo por empleado (usa parámetros) -------- */
   function calcEmpleado(emp) {
     const r = registros[emp.id] || {};
-    the const faltas = +r.faltas || 0;
+    const faltas = +r.faltas || 0;
     const retardos = +r.retardos || 0;
     const horas = Math.max(0, Math.floor(+r.horasExtras || 0));
     const incentivos = +r.otrosIncentivos || 0;
