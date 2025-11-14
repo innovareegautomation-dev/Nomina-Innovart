@@ -3,10 +3,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button"; // <-- NUEVO
 
 const LS_KEY_ACTIVE = "payroll-parametros-ACTIVO";
 const LS_KEY_ACTIVE_TS = "payroll-parametros-ACTIVO-ts";
-const LS_META_KEY = "payroll-meta-cumplida"; // <-- NUEVO
+const LS_META_KEY = "payroll-meta-cumplida";
+const LS_CAPTURE_INFO = "payroll-captura-info"; // <-- NUEVO
 
 /* ================== Utilidades de fecha ================== */
 function startOfFortnight(d) {
@@ -60,7 +62,7 @@ const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
 // };
 
 /* ================== Componente principal ================== */
-export default function CalculoNomina() {
+export default function CalculoNomina({ onCapturar = () => {} }) {
   const [fecha, setFecha] = useState(new Date());
   const [meta, setMeta] = useState(false);
   const [periodo, setPeriodo] = useState("quincenal"); // "quincenal" | "semanal"
@@ -103,6 +105,21 @@ export default function CalculoNomina() {
   }, [meta]);
 
   const pKey = periodKey(fecha);
+
+  /* -------- Guardar info de captura y avisar al padre -------- */
+  const handleCapturar = () => {
+    try {
+      const captureInfo = {
+        fecha: fecha.toISOString(),
+        periodo,
+        pKey,
+      };
+      localStorage.setItem(LS_CAPTURE_INFO, JSON.stringify(captureInfo));
+    } catch {
+      // ignorar errores de localStorage
+    }
+    onCapturar();
+  };
 
   /* -------- Carga / guardado de capturas por periodo -------- */
   useEffect(() => {
@@ -154,7 +171,7 @@ export default function CalculoNomina() {
   /* -------- Cálculo por empleado (usa parámetros) -------- */
   function calcEmpleado(emp) {
     const r = registros[emp.id] || {};
-    const faltas = +r.faltas || 0;
+    the const faltas = +r.faltas || 0;
     const retardos = +r.retardos || 0;
     const horas = Math.max(0, Math.floor(+r.horasExtras || 0));
     const incentivos = +r.otrosIncentivos || 0;
@@ -299,7 +316,7 @@ export default function CalculoNomina() {
         </div>
       </div>
 
-      {/* Controles: periodo + meta */}
+      {/* Controles: periodo + meta + capturar */}
       <div className="flex flex-wrap items-center gap-4 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-700">Periodo:</span>
@@ -343,6 +360,15 @@ export default function CalculoNomina() {
             (activa productividad solo Innovart)
           </span>
         </label>
+
+        <Button
+          type="button"
+          className="ml-auto"
+          variant="outline"
+          onClick={handleCapturar}
+        >
+          Capturar
+        </Button>
       </div>
 
       {/* Por empresa */}
