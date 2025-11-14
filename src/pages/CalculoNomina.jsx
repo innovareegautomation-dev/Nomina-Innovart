@@ -68,7 +68,7 @@ export default function CalculoNomina() {
   const [activaTS, setActivaTS] = useState(null);
   const [registros, setRegistros] = useState({});
 
-  // Cargar parámetros (empleados) desde localStorage
+  /* -------- Carga de parámetros (empleados) -------- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY_ACTIVE);
@@ -84,7 +84,7 @@ export default function CalculoNomina() {
 
   const pKey = periodKey(fecha);
 
-  // Cargar / guardar capturas específicas del periodo
+  /* -------- Carga / guardado de capturas por periodo -------- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(`payroll-calculo-${pKey}`);
@@ -101,7 +101,7 @@ export default function CalculoNomina() {
   const semana = weekNumber(fecha);
   const diasPeriodo = periodo === "quincenal" ? daysInFortnight(fecha) : 7;
 
-  // Agrupar empleados por empresa
+  /* -------- Agrupar empleados por empresa -------- */
   const grupos = useMemo(() => {
     const out = {};
     for (const e of activa) (out[e.empresa] ||= []).push(e);
@@ -131,7 +131,7 @@ export default function CalculoNomina() {
     return { prod, asist, limp, descFijos };
   };
 
-  // Cálculo por empleado (usa datos de ParametrosNominaTab)
+  /* -------- Cálculo por empleado (usa parámetros) -------- */
   function calcEmpleado(emp) {
     const r = registros[emp.id] || {};
     const faltas = +r.faltas || 0;
@@ -144,66 +144,68 @@ export default function CalculoNomina() {
     const { prod, asist, limp, descFijos } = bonosPorTipo(emp);
 
     const sueldoMensual = +emp.sueldoMensual || 0;
-    const sueldoDiario = sueldoMensual / 30;
+    const sueldoDiario = sueldoMensual / 30; // sueldo diario completo (no SDI)
 
     const nombreKey = (emp.nombre || "").toLowerCase();
 
-    // Bono base de asistencia: si es Innovart, 400 por defecto u override; si no, el configurado
-    const asistenciaBase =
-      emp.empresa === "Innovart Metal Design"
-        ? ASISTENCIA_OVERRIDE[nombreKey] ?? (asist || 400)
-        : asist;
+    /* --- Bono de asistencia --- */
+    let asistenciaBase = 0;
+    if (asist > 0) {
+      asistenciaBase = asist;
+    } else if (emp.empresa === "Innovart Metal Design") {
+      asistenciaBase = ASISTENCIA_OVERRIDE[nombreKey] ?? 400;
+    }
 
     const asistenciaOK = faltas === 0 && retardos < 4;
     const asistenciaAplicada = asistenciaOK ? asistenciaBase : 0;
 
-    const sueldoPeriodo = sueldoDiario * diasPeriodo + asistenciaAplicada;
+    /* --- Sueldo del periodo --- */
+    const sueldoBasePeriodo = sueldoDiario * diasPeriodo;
+    const sueldoPeriodo = sueldoBasePeriodo + asistenciaAplicada;
 
-    const descFaltas = faltas >= 4 ? sueldoDiario * 1 : 0;
-    const descRetardos = sueldoDiario * Math.floor(retardos / 4);
+    /* --- Horas extra --- */
     const pagoHoras = (sueldoDiario / 8) * horas;
 
-    // PRODUCTIVIDAD: solo depende de la meta y de que sea Innovart (NO de asistencia)
+    /* --- Bonos de productividad y limpieza --- */
     const prodBase = prod;
-    const productividadOK = meta;
-    const prodAplicado =
-      productividadOK && emp.empresa === "Innovart Metal Design"
-        ? prodBase
-        : 0;
+    const productividadOK = meta && emp.empresa === "Innovart Metal Design";
+    const prodAplicado = productividadOK ? prodBase : 0;
 
-    // LIMPIEZA: solo si tiene monto + asistencia OK + checkbox marcado
-    const limpAplicado =
-      limp > 0 && limpiezaOK && asistenciaOK ? limp : 0;
+    // Limpieza SOLO depende del checkbox (si tiene monto configurado)
+    const limpAplicado = limp > 0 && limpiezaOK ? limp : 0;
 
-    // PRIMA VACACIONAL y AGUINALDO desde parámetros
-    const primaVac = +emp.primaVacacional || 0;
+    /* --- Prima vacacional y aguinaldo (desde parámetros) --- */
+    const primaVacacional = +emp.primaVacacional || 0;
     const aguinaldo = +emp.aguinaldo || 0;
 
-    // Por ahora no capturamos descansos laborados, lo dejamos en 0
-    const descansosLab = 0;
-
-    // SUMA DE PERCEPCIONES, igual a tu Excel
+    /* --- Suma de percepciones (U) --- */
     const sumaPercepciones =
       sueldoPeriodo +
-      primaVac +
-      aguinaldo +
       pagoHoras +
-      descansosLab +
+      primaVacacional +
+      aguinaldo +
       limpAplicado +
       prodAplicado +
       incentivos -
       otrosDesc -
       descFijos;
 
-    // Sueldo fiscal bruto y dispersión base desde parámetros (si no existen, 0)
-    const sueldoFiscalBruto = +emp.sueldoFiscalBruto || 0;
-    const dispersionBase = +emp.dispersionBase || 0;
+    /* --- Sueldo Fiscal Bruto & Dispersión --- */
+    const dispersion = +emp.dispersionBase || 0;
 
-    // INTERNAL y NETO
+    // Si el empleado NO tiene sueldoFiscalBruto definido,
+    // usamos por defecto la misma cifra que la DISPERSIÓN (como en tu ejemplo).
+    const sueldoFiscalBruto =
+      emp.sueldoFiscalBruto != null
+        ? +emp.sueldoFiscalBruto || 0
+        : dispersion;
+
+    /* --- INTERNAL y Neto --- */
     const interna = sumaPercepciones - sueldoFiscalBruto;
-    const neto = interna + dispersionBase;
+    const neto = dispersion + interna;
 
     const sdi = +emp.sdi || 0;
+    const vales = +emp.limiteVales || 0;
 
     return {
       sdi,
@@ -217,14 +219,10 @@ export default function CalculoNomina() {
       sumaPercepciones,
       interna,
       neto,
-      vales: +emp.limiteVales || 0,
-      descFaltas,
-      descRetardos,
+      vales,
       descFijos,
       otrosDesc,
       incentivos,
-      sueldoFiscalBruto,
-      dispersionBase,
     };
   }
 
@@ -344,24 +342,24 @@ export default function CalculoNomina() {
                 <table className="table-fixed w-full text-sm border">
                   <colgroup>
                     <col style={{ width: "22rem" }} /> {/* Nombre */}
-                    <col style={{ width: "6rem" }} />  {/* Faltas */}
-                    <col style={{ width: "6rem" }} />  {/* Retardos */}
-                    <col style={{ width: "6.5rem" }} />{/* Horas extra */}
-                    <col style={{ width: "7.5rem" }} />{/* Productividad */}
-                    <col style={{ width: "7.5rem" }} />{/* Asistencia */}
-                    <col style={{ width: "8rem" }} />  {/* Limpieza */}
-                    <col style={{ width: "8rem" }} />  {/* Otros incentivos */}
-                    <col style={{ width: "8rem" }} />  {/* Otros descuentos */}
-                    <col style={{ width: "7rem" }} />  {/* Vales */}
-                    <col style={{ width: "8rem" }} />  {/* SDI */}
-                    <col style={{ width: "9rem" }} />  {/* Suma percepciones */}
-                    <col style={{ width: "9rem" }} />  {/* Interna */}
+                    <col style={{ width: "6rem" }} /> {/* Faltas */}
+                    <col style={{ width: "6rem" }} /> {/* Retardos */}
+                    <col style={{ width: "6.5rem" }} /> {/* Horas extra */}
+                    <col style={{ width: "7.5rem" }} /> {/* Productividad */}
+                    <col style={{ width: "7.5rem" }} /> {/* Asistencia */}
+                    <col style={{ width: "8rem" }} /> {/* Limpieza */}
+                    <col style={{ width: "8rem" }} /> {/* Otros incentivos */}
+                    <col style={{ width: "8rem" }} /> {/* Otros descuentos */}
+                    <col style={{ width: "7rem" }} /> {/* Vales */}
+                    <col style={{ width: "8rem" }} /> {/* SDI */}
+                    <col style={{ width: "9rem" }} /> {/* Suma percepciones */}
+                    <col style={{ width: "9rem" }} /> {/* Interna */}
                     <col style={{ width: "10rem" }} /> {/* Neto */}
                   </colgroup>
 
                   <thead className="bg-gray-50 text-xs uppercase">
                     <tr className="[&>th]:px-2.5 [&>th]:py-2 [&>th]:text-left [&>th]:border-b">
-                      <th className="sticky left-0 z-20 bg-gray-50">
+                      <th className="sticky left-0 z-20 bg-white">
                         Nombre del empleado
                       </th>
                       <th>Faltas</th>
@@ -374,14 +372,14 @@ export default function CalculoNomina() {
                       <th>Otros descuentos</th>
                       <th>Vales</th>
                       <th>SDI (IMSS)</th>
-                      <th>Suma de percepciones</th>
+                      <th>Suma percepciones</th>
                       <th>INTERNAL</th>
                       <th>Sueldo neto {periodoLabel}</th>
                     </tr>
                   </thead>
 
                   <tbody className="[&>tr>td]:px-2.5 [&>tr>td]:py-2">
-                    {emps.map((emp, idx) => {
+                    {emps.map((emp) => {
                       const r = registros[emp.id] || {};
                       const x = calcEmpleado(emp);
                       const { prod, limp } = bonosPorTipo(emp);
@@ -389,9 +387,6 @@ export default function CalculoNomina() {
 
                       const num = "text-right font-mono whitespace-nowrap";
                       const numTab = { fontVariantNumeric: "tabular-nums" };
-
-                      // Fondo sólido (sin transparencia) para la celda sticky
-                      const stickyBg = idx % 2 ? "bg-gray-50" : "bg-white";
 
                       const prodMostrar = prod || 0;
                       const asistMostrar = x.asistenciaBase;
@@ -402,7 +397,7 @@ export default function CalculoNomina() {
                           className="odd:bg-white even:bg-gray-50 border-b"
                         >
                           {/* Columna fija: nombre / puesto / sueldo */}
-                          <td className={`sticky left-0 z-10 ${stickyBg}`}>
+                          <td className="sticky left-0 z-10 bg-white">
                             <div className="font-medium leading-tight truncate">
                               {emp.nombre}
                             </div>
@@ -426,7 +421,7 @@ export default function CalculoNomina() {
                               value={r.faltas || ""}
                               onChange={(e) =>
                                 setReg(emp.id, {
-                                  faltas: parseInt(e.target.value || "0"),
+                                  faltas: parseInt(e.target.value || "0", 10),
                                 })
                               }
                             />
@@ -445,7 +440,7 @@ export default function CalculoNomina() {
                               value={r.retardos || ""}
                               onChange={(e) =>
                                 setReg(emp.id, {
-                                  retardos: parseInt(e.target.value || "0"),
+                                  retardos: parseInt(e.target.value || "0", 10),
                                 })
                               }
                             />
@@ -465,7 +460,8 @@ export default function CalculoNomina() {
                               onChange={(e) =>
                                 setReg(emp.id, {
                                   horasExtras: parseInt(
-                                    e.target.value || "0"
+                                    e.target.value || "0",
+                                    10
                                   ),
                                 })
                               }
@@ -575,7 +571,7 @@ export default function CalculoNomina() {
                             {currency(x.vales)}
                           </td>
 
-                          {/* SDI IMSS */}
+                          {/* SDI IMSS (desde parámetros) */}
                           <td className={num} style={numTab}>
                             {x.sdi ? currency(x.sdi) : "—"}
                           </td>
@@ -616,10 +612,8 @@ export default function CalculoNomina() {
                           {currency(tot.bonos)}
                         </span>
                       </td>
-                      {/* Otros incentivos + descuentos + vales */}
-                      <td className="px-2.5 py-2" colSpan={3}></td>
-                      {/* SDI vacío */}
-                      <td className="px-2.5 py-2"></td>
+                      {/* Otros incentivos + descuentos + vales + SDI */}
+                      <td className="px-2.5 py-2" colSpan={4}></td>
                       {/* Suma percepciones */}
                       <td className="px-2.5 py-2">
                         Percepciones:{" "}
