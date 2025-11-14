@@ -53,10 +53,10 @@ const isProd = (b) => (b.nombre || "").toLowerCase().includes("productiv");
 const isAsist = (b) => (b.nombre || "").toLowerCase().includes("asist");
 const isLimp = (b) => (b.nombre || "").toLowerCase().includes("limp");
 
-/* Overrides puntuales de asistencia (si algún perfil no es $400) */
-const ASISTENCIA_OVERRIDE = {
-  // "gonzalo cornejo": 186.67,
-};
+// ⛔️ ELIMINADO: ASISTENCIA_OVERRIDE y default de $400
+// const ASISTENCIA_OVERRIDE = {
+//   // "gonzalo cornejo": 186.67,
+// };
 
 /* ================== Componente principal ================== */
 export default function CalculoNomina() {
@@ -146,15 +146,10 @@ export default function CalculoNomina() {
     const sueldoMensual = +emp.sueldoMensual || 0;
     const sueldoDiario = sueldoMensual / 30; // sueldo diario completo (no SDI)
 
-    const nombreKey = (emp.nombre || "").toLowerCase();
-
-    /* --- Bono de asistencia --- */
-    let asistenciaBase = 0;
-    if (asist > 0) {
-      asistenciaBase = asist;
-    } else if (emp.empresa === "Innovart Metal Design") {
-      asistenciaBase = ASISTENCIA_OVERRIDE[nombreKey] ?? 400;
-    }
+    // ⚙️ Bono de asistencia 100% vinculado a Parámetros:
+    // - Si en parámetros no hay bono de asistencia, asist = 0.
+    // - Ya NO se aplica default de $400 ni overrides.
+    const asistenciaBase = asist; // viene directo de emp.bonos (tabla Parámetros)
 
     const asistenciaOK = faltas === 0 && retardos < 4;
     const asistenciaAplicada = asistenciaOK ? asistenciaBase : 0;
@@ -167,12 +162,12 @@ export default function CalculoNomina() {
     const pagoHoras = (sueldoDiario / 8) * horas;
 
     /* --- Bonos de productividad y limpieza --- */
-    const prodBase = prod;
+    const prodBase = prod; // viene directo de Parámetros
     const productividadOK = meta && emp.empresa === "Innovart Metal Design";
     const prodAplicado = productividadOK ? prodBase : 0;
 
-    // Limpieza SOLO depende del checkbox (si tiene monto configurado)
-    const limpAplicado = limp > 0 && limpiezaOK ? limp : 0;
+    // Limpieza depende solo del checkbox y del monto definido en Parámetros.
+    const limpAplicado = limpiezaOK ? limp : 0;
 
     /* --- Prima vacacional y aguinaldo (desde parámetros) --- */
     const primaVacacional = +emp.primaVacacional || 0;
@@ -194,7 +189,7 @@ export default function CalculoNomina() {
     const dispersion = +emp.dispersionBase || 0;
 
     // Si el empleado NO tiene sueldoFiscalBruto definido,
-    // usamos por defecto la misma cifra que la DISPERSIÓN (como en tu ejemplo).
+    // usamos por defecto la misma cifra que la DISPERSIÓN.
     const sueldoFiscalBruto =
       emp.sueldoFiscalBruto != null
         ? +emp.sueldoFiscalBruto || 0
